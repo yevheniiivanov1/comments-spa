@@ -29,9 +29,10 @@ export class CommentsStore {
   private readonly api = inject(CommentsApi);
 
   readonly query = signal<PageQuery>(DEFAULT_QUERY);
-  readonly page = rxResource<CommentPage, PageQuery>({
-    params: () => this.query(),
-    stream: ({ params }) => this.api.getPage(params.page, params.sort, params.direction),
+  private readonly pageEnabled = signal(false);
+  readonly page = rxResource<CommentPage, PageQuery | undefined>({
+    params: () => (this.pageEnabled() ? this.query() : undefined),
+    stream: ({ params }) => this.api.getPage(params!.page, params!.sort, params!.direction),
   });
   readonly threads = signal<ReadonlyMap<number, ThreadState>>(new Map());
   readonly fresh = signal<ReadonlySet<number>>(new Set());
@@ -39,6 +40,11 @@ export class CommentsStore {
   readonly newTopLevel = signal(0);
   /** Comments posted from this tab; their live echo is ignored. */
   private readonly own = new Set<number>();
+
+  /** Loads pages of top-level comments; a store used only for one thread never does. */
+  enablePage(): void {
+    this.pageEnabled.set(true);
+  }
 
   isDefaultView(): boolean {
     const q = this.query();
@@ -76,7 +82,7 @@ export class CommentsStore {
   /** A comment posted from this tab: replies go into their open thread; top-level ones need a page reload. */
   addOwn(comment: CommentDto): void {
     this.own.add(comment.id);
-    this.markFresh(comment.id);
+    this.highlight(comment.id);
     if (comment.rootId === null) {
       this.page.reload();
       return;
@@ -101,7 +107,7 @@ export class CommentsStore {
       return;
     }
     if (this.insertReply(comment)) {
-      this.markFresh(comment.id);
+      this.highlight(comment.id);
     }
   }
 
@@ -132,7 +138,8 @@ export class CommentsStore {
     return true;
   }
 
-  private markFresh(id: number): void {
+  /** Highlights a comment for a moment (just posted, just arrived, or the target of a link). */
+  highlight(id: number): void {
     this.fresh.update((ids) => new Set(ids).add(id));
     setTimeout(() => {
       this.fresh.update((ids) => {

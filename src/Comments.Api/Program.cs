@@ -1,4 +1,5 @@
 using Comments.Api.Endpoints;
+using Comments.Api.GraphQL;
 using Comments.Api.Hosting;
 using Comments.Api.Realtime;
 using Comments.Infrastructure;
@@ -18,6 +19,9 @@ builder.Services.AddCommentsRateLimiting(builder.Configuration);
 builder.Services.AddOpenApi();
 builder.Services.AddSignalR().AddJsonProtocol(options => JsonDefaults.Configure(options.PayloadSerializerOptions));
 builder.Services.AddHostedService<LiveUpdatesConsumer>();
+builder.Services.AddGraphQLServer()
+    .AddQueryType<CommentsQuery>()
+    .ModifyRequestOptions(options => options.IncludeExceptionDetails = builder.Environment.IsDevelopment());
 
 var app = builder.Build();
 
@@ -34,6 +38,8 @@ app.MapDefaultEndpoints();
 app.MapCommentEndpoints();
 app.MapCaptchaEndpoints();
 app.MapFileEndpoints();
+app.MapSearchEndpoints();
+app.MapGraphQL();
 app.MapHub<CommentsHub>(CommentsHub.Path);
 app.MapFallbackToFile("index.html");
 

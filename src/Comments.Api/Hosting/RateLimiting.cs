@@ -12,6 +12,8 @@ public sealed class RateLimitOptions
     public int CaptchasPerMinute { get; set; } = 30;
 
     public int PreviewsPerMinute { get; set; } = 60;
+
+    public int SearchesPerMinute { get; set; } = 120;
 }
 
 /// <summary>
@@ -23,6 +25,7 @@ internal static class RateLimiting
     public const string PostPolicy = "post";
     public const string CaptchaPolicy = "captcha";
     public const string PreviewPolicy = "preview";
+    public const string SearchPolicy = "search";
 
     public static IServiceCollection AddCommentsRateLimiting(this IServiceCollection services, IConfiguration configuration)
     {
@@ -34,6 +37,7 @@ internal static class RateLimiting
             AddPerIp(options, PostPolicy, limits.PostsPerMinute);
             AddPerIp(options, CaptchaPolicy, limits.CaptchasPerMinute);
             AddPerIp(options, PreviewPolicy, limits.PreviewsPerMinute);
+            AddPerIp(options, SearchPolicy, limits.SearchesPerMinute);
         });
     }
 
