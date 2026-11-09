@@ -54,7 +54,7 @@ if [ ! -f "$ENV_FILE" ]; then
   umask 077
   cat > "$ENV_FILE" <<EOF
 SERVER_IP=$IP
-SITE_ADDRESS=${IP//./-}.sslip.io
+SITE_ADDRESS=${IP//./-}.nip.io
 SQL_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=')Aa1!
 RABBITMQ_USER=comments
 RABBITMQ_PASSWORD=$(openssl rand -hex 16)

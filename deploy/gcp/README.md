@@ -1,6 +1,6 @@
 # Deploying to Google Cloud
 
-The stand is one Compute Engine VM running docker compose — the same `docker-compose.yml` as locally, attachments included (Azurite keeps them on the VM's disk). Caddy gets HTTPS from Let's Encrypt for an [sslip.io](https://sslip.io) name that resolves to the VM's static IP (`34-118-1-2.sslip.io` → `34.118.1.2`), so no domain is needed.
+The stand is one Compute Engine VM running docker compose — the same `docker-compose.yml` as locally, attachments included (Azurite keeps them on the VM's disk). Caddy gets HTTPS from Let's Encrypt for a [nip.io](https://nip.io) name that resolves to the VM's static IP (`34-118-1-2.nip.io` → `34.118.1.2`), so no domain is needed. Some DNS filters block wildcard DNS services; with your own domain, point an A record at the IP and set `SITE_ADDRESS` in `deploy/gcp/.env` to it.
 
 ```
 Internet ──443──► Caddy ──► API ──► SQL Server, Redis, RabbitMQ, Elasticsearch, Azurite   (containers on the VM)

@@ -259,7 +259,7 @@ v1.1.0   hardening: fix/cache-and-post-resilience, fix/search-indexing-retries, 
 
 One VM with docker compose and Caddy in front (automatic HTTPS from Let's Encrypt):
 
-- **[Google Cloud](deploy/gcp/README.md)** — a Compute Engine VM with a static IP and an sslip.io name; attachments stay in Azurite on the VM's disk. The live demo runs here.
+- **[Google Cloud](deploy/gcp/README.md)** — a Compute Engine VM with a static IP and a nip.io name; attachments stay in Azurite on the VM's disk. The live demo runs here.
 - **[Azure](deploy/azure/README.md)** — an Azure VM with its own DNS name; attachments go to Azure Blob Storage.
 
 ## Trade-offs
