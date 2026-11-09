@@ -2,7 +2,8 @@ namespace Comments.Application.Abstractions;
 
 /// <summary>
 /// Read-through cache for query results, split into regions that are invalidated as a whole
-/// (all pages of the top-level list, or one thread). Implementations must fall back to the factory when the cache is down.
+/// (all pages of the top-level list, or one thread). Implementations must fall back to the factory when the cache is down,
+/// and <see cref="InvalidateAsync"/> must not throw: it runs after a commit, when the write has already succeeded.
 /// </summary>
 public interface ICommentCache
 {

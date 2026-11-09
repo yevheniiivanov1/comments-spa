@@ -16,7 +16,11 @@ namespace Comments.Infrastructure.Caching;
 /// </para>
 /// <para>
 /// Concurrent misses for the same key in one process share a single database query (single flight), so a popular page
-/// that was just invalidated does not hit SQL Server once per waiting request. If Redis is unavailable, reads go to the database.
+/// that was just invalidated does not hit SQL Server once per waiting request.
+/// </para>
+/// <para>
+/// Failures never escape: if Redis is down or slow, reads go to the database and writes skip the cache. That includes
+/// <see cref="RedisTimeoutException"/>, which derives from <see cref="TimeoutException"/>, not from <see cref="RedisException"/>.
 /// </para>
 /// </summary>
 internal sealed class RedisCommentCache(IConnectionMultiplexer redis, ILogger<RedisCommentCache> logger) : ICommentCache
@@ -40,7 +44,7 @@ internal sealed class RedisCommentCache(IConnectionMultiplexer redis, ILogger<Re
                 return JsonSerializer.Deserialize<T>((byte[])cached!, JsonDefaults.Options)!;
             }
         }
-        catch (RedisException ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning(ex, "Redis read failed for {Region}/{Key}; reading from the database", region.Name, key);
             return await factory(cancellationToken);
@@ -62,7 +66,7 @@ internal sealed class RedisCommentCache(IConnectionMultiplexer redis, ILogger<Re
         {
             await redis.GetDatabase().StringIncrementAsync(VersionKey(region));
         }
-        catch (RedisException ex)
+        catch (Exception ex)
         {
             logger.LogError(ex, "Could not invalidate cache region {Region}; entries expire within {Lifetime}", region.Name, EntryLifetime);
         }
@@ -78,7 +82,7 @@ internal sealed class RedisCommentCache(IConnectionMultiplexer redis, ILogger<Re
             {
                 await redis.GetDatabase().StringSetAsync(cacheKey, JsonSerializer.SerializeToUtf8Bytes(value, JsonDefaults.Options), EntryLifetime);
             }
-            catch (RedisException ex)
+            catch (Exception ex)
             {
                 logger.LogWarning(ex, "Redis write failed for {Key}", cacheKey);
             }
