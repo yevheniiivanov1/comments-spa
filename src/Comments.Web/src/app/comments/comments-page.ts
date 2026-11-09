@@ -47,6 +47,7 @@ export class CommentsPage {
   });
 
   constructor() {
+    this.store.query.set(this.parseQuery());
     this.store.enablePage();
     effect(() => this.store.query.set(this.parseQuery()));
     this.composer.posted.pipe(takeUntilDestroyed()).subscribe((comment) => this.onPosted(comment));
