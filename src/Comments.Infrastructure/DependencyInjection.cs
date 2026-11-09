@@ -3,15 +3,17 @@ using Comments.Application.Abstractions;
 using Comments.Infrastructure.Caching;
 using Comments.Infrastructure.Captcha;
 using Comments.Infrastructure.Files;
+using Comments.Infrastructure.Messaging;
 using Comments.Infrastructure.Persistence;
+using Comments.Infrastructure.Search;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
 namespace Comments.Infrastructure;
 
 /// <summary>
-/// Registers the application and its backing services. Connection strings come from <c>ConnectionStrings:{name}</c>,
-/// which the Aspire AppHost, Docker Compose or the Azure deployment provide.
+/// Registers backing services. Connection strings come from <c>ConnectionStrings:{name}</c>, which the Aspire AppHost,
+/// Docker Compose or the Azure deployment provide. The API and the worker each take only the parts they use.
 /// </summary>
 public static class DependencyInjection
 {
@@ -21,10 +23,12 @@ public static class DependencyInjection
     public const string Elasticsearch = "elasticsearch";
     public const string Blobs = "blobs";
 
-    public static IHostApplicationBuilder AddCommentsInfrastructure(this IHostApplicationBuilder builder)
+    /// <summary>Everything the API needs: database, cache, CAPTCHA, files, broker, search and the use cases.</summary>
+    public static IHostApplicationBuilder AddCommentsApi(this IHostApplicationBuilder builder)
     {
-        builder.AddSqlServerDbContext<CommentsDbContext>(SqlDatabase);
-        builder.Services.AddScoped<ICommentsDbContext>(sp => sp.GetRequiredService<CommentsDbContext>());
+        builder.AddCommentsPersistence();
+        builder.AddCommentsMessaging();
+        builder.AddCommentsSearch();
 
         builder.AddRedisClient(Redis);
         builder.Services.AddSingleton<ICommentCache, RedisCommentCache>();
@@ -38,6 +42,48 @@ public static class DependencyInjection
         builder.Services.AddSingleton<IAttachmentProcessor, AttachmentProcessor>();
 
         builder.Services.AddApplication();
+        return builder;
+    }
+
+    /// <summary>The background side: publishes the outbox to RabbitMQ and keeps the search index up to date.</summary>
+    public static IHostApplicationBuilder AddCommentsWorker(this IHostApplicationBuilder builder)
+    {
+        builder.AddCommentsPersistence();
+        builder.AddCommentsMessaging();
+        builder.AddCommentsSearch();
+        builder.Services.AddCommentsBackgroundServices();
+        return builder;
+    }
+
+    /// <summary>The worker's hosted services alone, for hosts that already registered the clients (the integration tests).</summary>
+    public static IServiceCollection AddCommentsBackgroundServices(this IServiceCollection services)
+    {
+        services.AddSingleton(TimeProvider.System);
+        services.AddHostedService<OutboxDispatcher>();
+        services.AddHostedService<SearchIndexerConsumer>();
+        services.AddScoped<SearchReindexer>();
+        return services;
+    }
+
+    public static IHostApplicationBuilder AddCommentsPersistence(this IHostApplicationBuilder builder)
+    {
+        builder.AddSqlServerDbContext<CommentsDbContext>(SqlDatabase);
+        builder.Services.AddScoped<ICommentsDbContext>(sp => sp.GetRequiredService<CommentsDbContext>());
+        return builder;
+    }
+
+    public static IHostApplicationBuilder AddCommentsMessaging(this IHostApplicationBuilder builder)
+    {
+        builder.AddRabbitMQClient(RabbitMq);
+        return builder;
+    }
+
+    public static IHostApplicationBuilder AddCommentsSearch(this IHostApplicationBuilder builder)
+    {
+        builder.AddElasticsearchClient(Elasticsearch);
+        builder.Services.AddSingleton<ElasticCommentSearch>();
+        builder.Services.AddSingleton<ICommentSearch>(sp => sp.GetRequiredService<ElasticCommentSearch>());
+        builder.Services.AddSingleton<ICommentIndexer>(sp => sp.GetRequiredService<ElasticCommentSearch>());
         return builder;
     }
 }

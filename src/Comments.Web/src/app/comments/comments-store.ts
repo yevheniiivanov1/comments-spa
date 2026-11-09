@@ -37,6 +37,8 @@ export class CommentsStore {
   readonly fresh = signal<ReadonlySet<number>>(new Set());
   /** Top-level comments posted by others since this page was loaded. */
   readonly newTopLevel = signal(0);
+  /** Comments posted from this tab; their live echo is ignored. */
+  private readonly own = new Set<number>();
 
   isDefaultView(): boolean {
     const q = this.query();
@@ -73,6 +75,7 @@ export class CommentsStore {
 
   /** A comment posted from this tab: replies go into their open thread; top-level ones need a page reload. */
   addOwn(comment: CommentDto): void {
+    this.own.add(comment.id);
     this.markFresh(comment.id);
     if (comment.rootId === null) {
       this.page.reload();
@@ -88,6 +91,9 @@ export class CommentsStore {
 
   /** A comment that arrived over the live connection. */
   addLive(comment: CommentDto): void {
+    if (this.own.has(comment.id)) {
+      return;
+    }
     if (comment.rootId === null) {
       if (!this.page.value()?.items.some((c) => c.id === comment.id)) {
         this.newTopLevel.update((n) => n + 1);
