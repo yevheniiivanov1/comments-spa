@@ -19,7 +19,7 @@ A comments app built as a single-page application. Users post comments and reply
 - [Load](#load)
 - [Tests](#tests)
 - [Git branches](#git-branches)
-- [Deploying to Azure](#deploying-to-azure)
+- [Deploying](#deploying)
 - [Trade-offs](#trade-offs)
 
 ## Run it
@@ -79,7 +79,7 @@ The AppHost starts the same dependencies in containers, the API, the worker and 
 | Who posted | `Users` table (by e-mail) plus IP and User-Agent on every comment | [Database](#database) |
 | Plain CSS design with motion | Comment cards, animations for new comments, opening threads, the dialog and errors; responsive down to 360 px | `*.scss` |
 | Background work and live updates | Domain event → outbox → RabbitMQ; pages and threads cached in Redis; new comments arrive over WebSocket (SignalR) — the "Live" indicator in the header | [Architecture](#architecture) |
-| GraphQL, search, cloud | Hot Chocolate (`/graphql`, the UI's search uses it); RabbitMQ (quorum queue, delayed retries, dead letters with a replay command); Elasticsearch (full-text search with English and Russian stemming); Azure (VM + Blob Storage) | [`CommentsQuery.cs`](src/Comments.Api/GraphQL/CommentsQuery.cs), [`deploy/azure`](deploy/azure) |
+| GraphQL, search, cloud | Hot Chocolate (`/graphql`, the UI's search uses it); RabbitMQ (quorum queue, delayed retries, dead letters with a replay command); Elasticsearch (full-text search with English and Russian stemming); Google Cloud or Azure VM (+ Azure Blob Storage) | [`CommentsQuery.cs`](src/Comments.Api/GraphQL/CommentsQuery.cs), [`deploy/gcp`](deploy/gcp), [`deploy/azure`](deploy/azure) |
 | Capacity | Load estimate for 1M comments and 100k users a day, design decisions and k6 results on 1M rows | [docs/architecture.md](docs/architecture.md) |
 
 Also: search across all comments with highlighted matches and a jump to the thread, drag-and-drop upload, upload progress, remembered name and e-mail, rate limits, health checks, OpenTelemetry.
@@ -210,7 +210,7 @@ query {
 - **SQL injection.** All queries are parameterized EF Core; the one hand-written SQL statement (claiming outbox rows) is an interpolated `FromSql`, which is parameterized too. Sorting is an enumeration, not a string: `?sort=Id;DROP TABLE` → `400` (covered by a test).
 - **Files.** The type is detected from the content; JPG and PNG are always re-encoded (polyglots and metadata do not survive re-encoding). The one exception is a GIF that already fits 320×240: it is stored as uploaded to keep its animation, after being decoded successfully. The server generates the stored names; every file is served with `X-Content-Type-Options: nosniff` and its decoded type, and text files with `Content-Security-Policy: sandbox`.
 - **Abuse.** Single-use CAPTCHA; per-IP rate limits on posting, CAPTCHA, preview, search and `/graphql`; a GraphQL cost budget (one request holds at most a few searches, whatever aliases it uses) and depth limit; request size limits (6 MB for posting, 64 KB for preview); an image pixel limit.
-- **Client IP.** `X-Forwarded-For` is trusted only in the Azure setup, where Caddy is the only way in and overwrites the header. Locally the API is published directly, so the header is ignored and cannot be used to dodge rate limits or fake the stored IP.
+- **Client IP.** `X-Forwarded-For` is trusted only in the cloud setups, where Caddy is the only way in and overwrites the header. Locally the API is published directly, so the header is ignored and cannot be used to dodge rate limits or fake the stored IP.
 - **Privacy.** E-mail addresses are public: the list is sortable by e-mail, so they are shown and returned by the API. Posting under someone else's e-mail is possible (there is no confirmation) and updates the name and home page stored in `Users` for that address; each comment keeps what was entered with it. Confirming addresses would be the next step for a real product.
 - **CSRF** does not apply: no cookies or sessions, and the CAPTCHA protects posting.
 
@@ -255,9 +255,12 @@ v1.1.0   hardening: fix/cache-and-post-resilience, fix/search-indexing-retries, 
          (each → develop; develop → main per release)
 ```
 
-## Deploying to Azure
+## Deploying
 
-One VM with docker compose (Caddy with automatic HTTPS from Let's Encrypt) plus Azure Blob Storage for attachments. Instructions and scripts: **[deploy/azure](deploy/azure/README.md)**.
+One VM with docker compose and Caddy in front (automatic HTTPS from Let's Encrypt):
+
+- **[Google Cloud](deploy/gcp/README.md)** — a Compute Engine VM with a static IP and an sslip.io name; attachments stay in Azurite on the VM's disk. The live demo runs here.
+- **[Azure](deploy/azure/README.md)** — an Azure VM with its own DNS name; attachments go to Azure Blob Storage.
 
 ## Trade-offs
 

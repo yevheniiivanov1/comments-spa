@@ -13,7 +13,7 @@ services:
       - "443:443"
       - "443:443/udp"
     volumes:
-      - ./deploy/azure/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
     depends_on:
