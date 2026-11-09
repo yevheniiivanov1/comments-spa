@@ -112,6 +112,10 @@ public sealed class PostCommentHandler(
         {
             var region = comment.RootId is { } rootId ? CacheRegion.Thread(rootId) : CacheRegion.TopLevel;
             await cache.InvalidateAsync(region, CancellationToken.None);
+            if (comment.RootId is null)
+            {
+                await cache.IncrementCounterAsync(CommentQueries.TopLevelCounter);
+            }
         }
         catch (Exception ex)
         {

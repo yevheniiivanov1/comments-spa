@@ -100,6 +100,17 @@ public sealed class CommentApiTests(ApiFactory factory) : IDisposable
     }
 
     [Fact]
+    public async Task Thread_count_follows_new_threads_but_not_replies()
+    {
+        var before = (await Api.GetAsync<CommentPage>("/api/comments")).TotalCount;
+
+        var root = await Api.PostOkAsync("Counted", "counted@example.com", "a new thread");
+        await Api.PostOkAsync("Counted", "counted@example.com", "a reply", parentId: root.Id);
+
+        Assert.Equal(before + 1, (await Api.GetAsync<CommentPage>("/api/comments")).TotalCount);
+    }
+
+    [Fact]
     public async Task Reply_to_a_missing_comment_is_rejected()
     {
         using var response = await Api.PostAsync(parentId: 999_999_999);

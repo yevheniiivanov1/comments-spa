@@ -10,6 +10,15 @@ public interface ICommentCache
     Task<T> GetOrCreateAsync<T>(CacheRegion region, string key, Func<CancellationToken, Task<T>> factory, CancellationToken cancellationToken);
 
     Task InvalidateAsync(CacheRegion region, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// A counter kept in the cache: loaded once with <paramref name="load"/>, then moved by <see cref="IncrementCounterAsync"/>
+    /// instead of being recounted. It is reloaded when it expires, which also corrects any drift.
+    /// </summary>
+    Task<long> GetCounterAsync(string name, Func<CancellationToken, Task<long>> load, CancellationToken cancellationToken);
+
+    /// <summary>Adds one to a counter if it is loaded; must not throw (it runs after a commit).</summary>
+    Task IncrementCounterAsync(string name);
 }
 
 /// <summary>
