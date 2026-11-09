@@ -1,0 +1,151 @@
+<dialog #dialog class="dialog" (cancel)="$event.preventDefault(); cancel()" aria-labelledby="form-title">
+  <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+    <header class="head">
+      <h2 id="form-title">
+        @if (parent(); as p) {
+          Reply to <span class="accent">{{ p.userName }}</span>
+        } @else {
+          New comment
+        }
+      </h2>
+      <button type="button" class="icon-button" (click)="cancel()" aria-label="Close"><app-icon name="close" /></button>
+    </header>
+
+    @if (parent(); as p) {
+      <blockquote class="quote" [innerHTML]="p.html"></blockquote>
+    }
+
+    <div class="grid">
+      <label class="field" [class.invalid]="errorsOf('userName').length">
+        <span class="label">User Name <b>*</b></span>
+        <input formControlName="userName" autocomplete="nickname" maxlength="50" placeholder="Latin letters and digits" />
+        @for (error of errorsOf('userName'); track error) {
+          <span class="error" animate.enter="error-in">{{ error }}</span>
+        }
+      </label>
+
+      <label class="field" [class.invalid]="errorsOf('email').length">
+        <span class="label">E-mail <b>*</b></span>
+        <input formControlName="email" type="email" autocomplete="email" maxlength="254" placeholder="name@example.com" />
+        @for (error of errorsOf('email'); track error) {
+          <span class="error" animate.enter="error-in">{{ error }}</span>
+        }
+      </label>
+
+      <label class="field wide" [class.invalid]="errorsOf('homePage').length">
+        <span class="label">Home page</span>
+        <input formControlName="homePage" type="url" autocomplete="url" placeholder="https://example.com (optional)" />
+        @for (error of errorsOf('homePage'); track error) {
+          <span class="error" animate.enter="error-in">{{ error }}</span>
+        }
+      </label>
+
+      <div class="field wide" [class.invalid]="errorsOf('text').length">
+        <label class="label" for="comment-text">Text <b>*</b></label>
+        <div class="editor">
+          <div class="toolbar" role="toolbar" aria-label="Formatting">
+            <button type="button" (click)="wrap('i')" title="Italic (Ctrl+I)"><i>i</i></button>
+            <button type="button" (click)="wrap('strong')" title="Bold (Ctrl+B)"><strong>strong</strong></button>
+            <button type="button" (click)="wrap('code')" title="Code"><code>code</code></button>
+            <button type="button" (click)="wrap('a')" title="Link (Ctrl+K)"><app-icon name="link" [size]="14" /> a</button>
+            <span class="spacer"></span>
+            <button type="button" class="preview-toggle" [class.active]="previewOpen()" (click)="togglePreview()">
+              <app-icon name="eye" [size]="15" /> Preview
+            </button>
+          </div>
+          <textarea
+            #textarea
+            id="comment-text"
+            formControlName="text"
+            rows="6"
+            [attr.maxlength]="maxTextLength"
+            placeholder="Allowed tags: <a href=&quot;…&quot; title=&quot;…&quot;>, <code>, <i>, <strong>"
+            (keydown)="onTextKeydown($event)"
+          ></textarea>
+          <span class="counter">{{ textLength() }} / {{ maxTextLength }}</span>
+        </div>
+        @for (error of errorsOf('text'); track error) {
+          <span class="error" animate.enter="error-in">{{ error }}</span>
+        }
+
+        @if (previewOpen()) {
+          <section class="preview" animate.enter="slide-in" animate.leave="slide-out" aria-live="polite">
+            <h3>Preview</h3>
+            @if (preview(); as result) {
+              @if (result.html) {
+                <div class="comment-html" [innerHTML]="result.html"></div>
+              } @else {
+                <ul class="preview-errors">
+                  @for (error of result.errors; track error) {
+                    <li>{{ error }}</li>
+                  }
+                </ul>
+              }
+            } @else {
+              <div class="muted">Rendering…</div>
+            }
+          </section>
+        }
+      </div>
+
+      <div class="field wide" [class.invalid]="fileError()">
+        <span class="label">Attachment</span>
+        @if (file(); as f) {
+          <div class="file" animate.enter="error-in">
+            @if (filePreview(); as src) {
+              <img [src]="src" alt="" class="file-thumb" />
+            } @else {
+              <app-icon name="file" [size]="22" />
+            }
+            <div class="file-info">
+              <span class="file-name">{{ f.name }}</span>
+              <span class="muted">{{ f.size | fileSize }}{{ filePreview() ? ' · larger images are scaled down to fit 320×240' : '' }}</span>
+            </div>
+            <button type="button" class="icon-button" (click)="removeFile()" aria-label="Remove file"><app-icon name="close" [size]="16" /></button>
+          </div>
+        } @else {
+          <label class="drop" (dragover)="$event.preventDefault()" (drop)="onDrop($event)">
+            <app-icon name="paperclip" />
+            <span>Choose or drop a file — JPG, GIF, PNG image or TXT up to 100 KB</span>
+            <input type="file" accept=".jpg,.jpeg,.png,.gif,.txt,image/jpeg,image/png,image/gif,text/plain" (change)="onFileSelected($event)" />
+          </label>
+        }
+        @if (fileError(); as error) {
+          <span class="error" animate.enter="error-in">{{ error }}</span>
+        }
+      </div>
+
+      <div class="field wide captcha" [class.invalid]="errorsOf('captcha').length">
+        <span class="label">CAPTCHA <b>*</b></span>
+        <div class="captcha-row">
+          @if (captcha(); as c) {
+            <img [src]="c.image" alt="CAPTCHA: type the characters you see" width="180" height="60" animate.enter="error-in" />
+          } @else {
+            <div class="captcha-placeholder"></div>
+          }
+          <button type="button" class="icon-button" (click)="loadCaptcha()" title="New picture" aria-label="New CAPTCHA picture">
+            <app-icon name="refresh" />
+          </button>
+          <input formControlName="captcha" maxlength="5" autocomplete="off" spellcheck="false" placeholder="Characters" aria-label="CAPTCHA answer" />
+        </div>
+        @for (error of errorsOf('captcha'); track error) {
+          <span class="error" animate.enter="error-in">{{ error }}</span>
+        }
+      </div>
+    </div>
+
+    @if (formError(); as error) {
+      <div class="form-error" role="alert" animate.enter="error-in">{{ error }}</div>
+    }
+
+    <footer class="foot">
+      @if (progress() !== null) {
+        <div class="progress" aria-label="Uploading"><span [style.width.%]="progress()"></span></div>
+      }
+      <button type="button" class="button ghost" (click)="cancel()">Cancel</button>
+      <button type="submit" class="button primary" [disabled]="progress() !== null">
+        {{ progress() !== null ? 'Posting…' : parent() ? 'Post reply' : 'Post comment' }}
+      </button>
+    </footer>
+  </form>
+</dialog>

@@ -1,0 +1,148 @@
+<section class="board">
+  <div class="board-head">
+    <div>
+      <h1>Comments</h1>
+      @if (page(); as p) {
+        <p class="muted">
+          {{ p.totalCount | number }} {{ p.totalCount === 1 ? 'thread' : 'threads' }}
+          @if (p.totalPages > 1) {
+            · page {{ p.page }} of {{ p.totalPages | number }}
+          }
+        </p>
+      }
+    </div>
+    <button type="button" class="button primary" (click)="composer.open()">
+      <app-icon name="plus" [size]="18" /> New comment
+    </button>
+  </div>
+
+  @if (store.newTopLevel() > 0) {
+    <button type="button" class="new-banner" animate.enter="banner-in" (click)="showNew()">
+      {{ store.newTopLevel() }} new {{ store.newTopLevel() === 1 ? 'comment' : 'comments' }} — show
+    </button>
+  }
+
+  <div class="table-wrap" [class.loading]="store.page.isLoading()">
+    <div class="loading-bar" aria-hidden="true"></div>
+    <table class="comments">
+      <thead>
+        <tr>
+          <th class="col-author" [attr.aria-sort]="ariaSort('userName')">
+            <button type="button" class="sort" [class.active]="store.query().sort === 'userName'" (click)="sortBy('userName')">
+              User Name
+              <app-icon [name]="store.query().sort === 'userName' ? (store.query().direction === 'asc' ? 'sort-asc' : 'sort-desc') : 'sort'" [size]="15" />
+            </button>
+          </th>
+          <th class="col-email" [attr.aria-sort]="ariaSort('email')">
+            <button type="button" class="sort" [class.active]="store.query().sort === 'email'" (click)="sortBy('email')">
+              E-mail
+              <app-icon [name]="store.query().sort === 'email' ? (store.query().direction === 'asc' ? 'sort-asc' : 'sort-desc') : 'sort'" [size]="15" />
+            </button>
+          </th>
+          <th class="col-date" [attr.aria-sort]="ariaSort('createdAt')">
+            <button type="button" class="sort" [class.active]="store.query().sort === 'createdAt'" (click)="sortBy('createdAt')">
+              Date
+              <app-icon [name]="store.query().sort === 'createdAt' ? (store.query().direction === 'asc' ? 'sort-asc' : 'sort-desc') : 'sort'" [size]="15" />
+            </button>
+          </th>
+          <th class="col-text">Comment</th>
+          <th class="col-replies">Replies</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (c of page()?.items ?? []; track c.id) {
+          @let thread = store.threads().get(c.id);
+          <tr class="row" [class.open]="thread?.open" [class.fresh]="store.fresh().has(c.id)" animate.enter="row-in">
+            <td class="col-author" data-label="User Name">
+              <div class="author">
+                <app-avatar [name]="c.userName" />
+                @if (c.homePage) {
+                  <a class="name" [href]="c.homePage" target="_blank" rel="nofollow ugc noopener" [title]="c.homePage">{{ c.userName }}</a>
+                } @else {
+                  <span class="name">{{ c.userName }}</span>
+                }
+              </div>
+            </td>
+            <td class="col-email" data-label="E-mail"><span class="email">{{ c.email }}</span></td>
+            <td class="col-date" data-label="Date">
+              <time [attr.datetime]="c.createdAt">{{ c.createdAt | date: 'dd.MM.yy' }}<br /><span class="muted">{{ c.createdAt | date: 'HH:mm' }}</span></time>
+            </td>
+            <td class="col-text" (click)="store.toggleThread(c)" [title]="thread?.open ? 'Collapse' : 'Open the thread'">
+              <div class="text comment-html" [class.clamp]="!thread?.open" [innerHTML]="c.html"></div>
+              @if (c.attachment; as file) {
+                <button type="button" class="attachment-chip" (click)="$event.stopPropagation(); openAttachment(file, c)">
+                  <app-icon [name]="file.kind === 'image' ? 'image' : 'file'" [size]="14" /> {{ file.fileName }}
+                </button>
+              }
+            </td>
+            <td class="col-replies" data-label="Replies">
+              <button type="button" class="replies" [class.has]="c.replyCount > 0" (click)="store.toggleThread(c)" [attr.aria-expanded]="!!thread?.open">
+                <app-icon name="thread" [size]="15" /> {{ c.replyCount }}
+              </button>
+            </td>
+          </tr>
+          @if (thread?.open) {
+            <tr class="thread-row">
+              <td colspan="5">
+                <div class="thread" animate.enter="thread-in" animate.leave="thread-out">
+                  <app-comment-card
+                    [comment]="c"
+                    [showEmail]="true"
+                    (reply)="composer.open($event)"
+                    (openAttachment)="openAttachment($event, c)"
+                  />
+                  @let tree = trees().get(c.id) ?? [];
+                  @if (tree.length) {
+                    <div class="replies-tree">
+                      @for (node of tree; track node.comment.id) {
+                        <app-comment-node
+                          animate.enter="row-in"
+                          [node]="node"
+                          [freshIds]="store.fresh()"
+                          (reply)="composer.open($event)"
+                          (openAttachment)="openAttachment($event.attachment, $event.comment)"
+                        />
+                      }
+                    </div>
+                  }
+                  <div class="thread-foot">
+                    @if (thread?.loading) {
+                      <span class="muted">Loading replies…</span>
+                    } @else if (thread?.error) {
+                      <span class="error">{{ thread?.error }}</span>
+                      <button type="button" class="link" (click)="store.loadThread(c.id, 0)">Retry</button>
+                    } @else if (thread?.nextAfter) {
+                      <button type="button" class="link" (click)="store.loadThread(c.id, thread!.nextAfter!)">Load more replies</button>
+                    } @else if (!tree.length) {
+                      <span class="muted">No replies yet.</span>
+                    }
+                    <button type="button" class="button small" (click)="composer.open(c)">
+                      <app-icon name="reply" [size]="15" /> Reply
+                    </button>
+                  </div>
+                </div>
+              </td>
+            </tr>
+          }
+        } @empty {
+          @if (!store.page.isLoading()) {
+            <tr>
+              <td colspan="5" class="empty">
+                @if (store.page.error()) {
+                  Comments could not be loaded.
+                  <button type="button" class="link" (click)="store.page.reload()">Try again</button>
+                } @else {
+                  No comments yet — be the first!
+                }
+              </td>
+            </tr>
+          }
+        }
+      </tbody>
+    </table>
+  </div>
+
+  @if (page(); as p) {
+    <app-pagination [page]="p.page" [totalPages]="p.totalPages" (go)="goTo($event)" />
+  }
+</section>

@@ -1,0 +1,167 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgb(15 20 35 / 0.82);
+  backdrop-filter: blur(3px);
+}
+
+.frame {
+  position: relative;
+  margin: 0;
+  padding: 14px 14px 10px;
+  max-width: min(900px, 100%);
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 24px 60px rgb(0 0 0 / 0.45);
+}
+
+.content {
+  display: grid;
+  place-items: center;
+  min-width: 200px;
+  min-height: 120px;
+
+  img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    border-radius: 4px;
+  }
+}
+
+.text {
+  margin: 0;
+  width: min(760px, calc(100vw - 64px));
+  max-height: 70vh;
+  overflow: auto;
+  padding: 12px 14px;
+  background: var(--surface-muted);
+  border-radius: 6px;
+  font: 13px/1.5 var(--font-mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.loading {
+  color: var(--text-muted);
+}
+
+figcaption {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--text-muted);
+
+  .title {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text);
+  }
+
+  .open {
+    color: var(--accent);
+  }
+}
+
+.close {
+  position: absolute;
+  top: -14px;
+  right: -14px;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 50%;
+  background: #fff;
+  color: var(--text);
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.3);
+  transition: transform 0.15s ease;
+
+  &:hover {
+    transform: rotate(90deg);
+  }
+}
+
+.nav {
+  position: absolute;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-top: -22px;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.9);
+  color: var(--text);
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.3);
+  transition: transform 0.15s ease, background 0.15s ease;
+
+  &:hover {
+    background: #fff;
+    transform: scale(1.08);
+  }
+
+  &.prev {
+    left: -22px;
+  }
+
+  &.next {
+    right: -22px;
+  }
+}
+
+.backdrop-in {
+  animation: fade-in 0.2s ease-out;
+
+  .frame {
+    animation: zoom 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  }
+}
+
+.backdrop-out {
+  animation: fade-in 0.18s ease-in reverse forwards;
+}
+
+.zoom-in {
+  animation: zoom 0.25s ease-out;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes zoom {
+  from {
+    opacity: 0;
+    transform: scale(0.88);
+  }
+}
+
+@media (max-width: 600px) {
+  .nav.prev {
+    left: 4px;
+  }
+
+  .nav.next {
+    right: 4px;
+  }
+
+  .close {
+    top: 6px;
+    right: 6px;
+  }
+}
