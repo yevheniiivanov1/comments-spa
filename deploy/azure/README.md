@@ -1,5 +1,7 @@
 # Deploying to Azure
 
+An alternative to the [Google Cloud setup](../gcp/README.md), where the live demo runs. The difference: here attachments go to Azure Blob Storage instead of the Azurite container on the VM.
+
 The stand is one Linux VM running docker compose (the same `docker-compose.yml` as locally) plus Azure Blob Storage for attachments. Caddy gets HTTPS from Let's Encrypt for the VM's DNS name (`<name>.<region>.cloudapp.azure.com`).
 
 ```
