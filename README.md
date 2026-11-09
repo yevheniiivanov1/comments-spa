@@ -6,7 +6,7 @@ A comments app built as a single-page application. Users post comments and reply
 
 **Stack:** .NET 10 (ASP.NET Core, EF Core 10, SignalR, Hot Chocolate GraphQL), SQL Server 2022, Redis, RabbitMQ, Elasticsearch, Azure Blob Storage (Azurite locally), Angular 22, Docker, .NET Aspire, k6.
 
-**Live demo:** _not deployed yet_ · **Demo video:** _coming soon_
+**Live demo:** https://34-118-4-132.nip.io · **Demo video:** _coming soon_
 
 ## Contents
 
@@ -253,6 +253,7 @@ v1.0.0   feature/domain-persistence → feature/comments-api → feature/angular
 v1.1.0   hardening: fix/cache-and-post-resilience, fix/search-indexing-retries, fix/outbox-backoff-cleanup,
          fix/input-validation, fix/api-hardening, fix/client-ux, perf/list-cache-and-images, test/load-realism, docs/review-follow-up
          (each → develop; develop → main per release)
+v1.2.0   feature/gcp-deploy
 ```
 
 ## Deploying
