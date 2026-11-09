@@ -1,0 +1,8 @@
+{$SITE_ADDRESS} {
+	encode zstd gzip
+
+	# The API sets its own security headers; HSTS belongs to the TLS terminator.
+	header Strict-Transport-Security "max-age=31536000"
+
+	reverse_proxy api:8080
+}

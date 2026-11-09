@@ -1,0 +1,210 @@
+# Comments — a single-page comments app
+
+Test task "SPA application: Comments" (Middle+ level). Users post comments and reply to them at any depth, attach images and text files, see new comments without reloading the page and search the full text.
+
+![The list of threads and an open thread with replies](docs/screenshot.jpg)
+
+**Stack:** .NET 10 (ASP.NET Core, EF Core 10, SignalR, Hot Chocolate GraphQL), SQL Server 2022, Redis, RabbitMQ, Elasticsearch, Azure Blob Storage (Azurite locally), Angular 22, Docker, .NET Aspire, k6.
+
+**Live stand:** _link added after deployment_ · **Video:** _link added after recording_
+
+## Contents
+
+- [Run it](#run-it)
+- [Features](#features) — the task's requirements and where they are implemented
+- [Architecture](#architecture)
+- [Database](#database)
+- [API](#api)
+- [Security](#security)
+- [Load (Middle+)](#load-middle)
+- [Tests](#tests)
+- [Git branches](#git-branches)
+- [Deploying to Azure](#deploying-to-azure)
+- [Trade-offs](#trade-offs)
+
+## Run it
+
+### Option 1. Docker only (one command)
+
+You need Docker with at least 6 GB of memory (SQL Server and Elasticsearch need the most).
+
+```bash
+git clone <repository URL> comments && cd comments
+docker compose up --build
+```
+
+After 2–3 minutes (longer the first time, while images download) open <http://localhost:8080>.
+
+This starts SQL Server, Redis, RabbitMQ, Elasticsearch, Azurite (the Blob Storage emulator), the API with the built Angular app, and the worker. Migrations create the database schema when the API starts. The default passwords are for local runs only; for anything reachable from outside, set them in `.env` (see [`.env.example`](.env.example)).
+
+Useful addresses: <http://localhost:8080/scalar> — REST API reference, <http://localhost:8080/graphql> — GraphQL IDE (Nitro), <http://localhost:15672> — RabbitMQ console (`comments` / `comments_dev`).
+
+Stop: `docker compose down` (data stays in the volumes); start from scratch: `docker compose down -v`.
+
+### Option 2. .NET Aspire (for development)
+
+You need the [.NET 10 SDK](https://dotnet.microsoft.com/download), Node.js 22+ and Docker.
+
+```bash
+dotnet run --project src/Comments.AppHost --launch-profile http
+```
+
+The AppHost starts the same dependencies in containers, the API, the worker and the Angular dev server (running `npm install` first). The console prints a link to the Aspire dashboard with resources, logs, traces (OpenTelemetry) and links to the app (<http://localhost:4200>) and the API.
+
+## Features
+
+| Requirement | How it is done | Where |
+| --- | --- | --- |
+| Form: User Name (Latin letters and digits), E-mail, Home page (URL), CAPTCHA, Text | Checked in the browser while typing and on the server by the same rules; server errors appear under their field | [`comment-form.ts`](src/Comments.Web/src/app/comments/comment-form.ts), [`Users/*`](src/Comments.Domain/Users) |
+| CAPTCHA (picture, Latin letters and digits) | Drawn on the server (SkiaSharp: rotated letters, noise); the answer lives in Redis for 5 minutes and is removed by the first check (`GETDEL`); case-insensitive | [`CaptchaService.cs`](src/Comments.Infrastructure/Captcha/CaptchaService.cs) |
+| Only `<a href title>`, `<code>`, `<i>`, `<strong>`; closing tags checked; valid XHTML | Parsed with regular expressions and a stack of open tags; text and attributes are re-encoded and tags rebuilt, so nothing but the allowed markup reaches the output. All errors at once, in plain words (`Tag <i> is not closed.`) | [`CommentMarkup.cs`](src/Comments.Domain/Markup/CommentMarkup.cs), [tests](tests/Comments.Domain.Tests/CommentMarkupTests.cs) |
+| Toolbar `[i] [strong] [code] [a]` | Wraps the selection; Ctrl+I, Ctrl+B, Ctrl+K | `comment-form.html` |
+| Preview without reloading | AJAX to the server; shows exactly the XHTML that will be published and updates as you type | `POST /api/comments/preview` |
+| Cascading replies of any depth | `ParentId` + `RootId` + `Depth`; a thread loads as one index range and becomes a tree in the browser | [`Comment.cs`](src/Comments.Domain/Comments/Comment.cs), [`thread-tree.ts`](src/Comments.Web/src/app/comments/thread-tree.ts) |
+| Top-level comments as a table sortable by User Name, E-mail and date, both ways | A table with sort arrows; each sort has its own index | [`comments-page.html`](src/Comments.Web/src/app/comments/comments-page.html), [`CommentQueries.cs`](src/Comments.Application/Comments/CommentQueries.cs) |
+| 25 per page, LIFO by default | Page and sort live in the URL (`?page=2&sort=email&dir=asc`) | — |
+| JPG/GIF/PNG image, scaled down proportionally to 320×240 | The type is detected from the content, not the extension; larger images are scaled down and re-encoded (which also drops EXIF and GPS), EXIF rotation is applied; a small GIF is kept as is so its animation survives | [`AttachmentProcessor.cs`](src/Comments.Infrastructure/Files/AttachmentProcessor.cs) |
+| TXT up to 100 KB | Size and "is it text" checks; the encoding is detected (UTF-8 or Windows-1251) and named in `Content-Type` | same |
+| Viewing files with visual effects | Own lightbox: dimmed backdrop, zoom, arrow keys through every attachment on screen; text files open in it too | [`lightbox.ts`](src/Comments.Web/src/app/shared/lightbox.ts) |
+| Protection against XSS and SQL injection | See [Security](#security) | — |
+| Data about the user | `Users` table (by e-mail) plus IP and User-Agent on every comment | [Database](#database) |
+| Simple CSS design, visual effects | Cards as in the mock-up, animations for new comments, opening threads, the dialog and errors; responsive down to 360 px | `*.scss` |
+| **Junior+:** queue, cache, events, WebSocket | Domain event → outbox → RabbitMQ; pages and threads cached in Redis; new comments arrive over WebSocket (SignalR) — the "Live" indicator in the header | [Architecture](#architecture) |
+| **Middle:** GraphQL, broker, NoSQL, cloud | Hot Chocolate (`/graphql`, the UI's search uses it); RabbitMQ (quorum queue, dead letters); Elasticsearch (full-text search with English and Russian stemming) and Redis; Azure (VM + Blob Storage) | [`CommentsQuery.cs`](src/Comments.Api/GraphQL/CommentsQuery.cs), [`deploy/azure`](deploy/azure) |
+| **Middle+:** architecture for 1M messages and 100k users a day, load test | Capacity estimate, decisions and k6 results on 1M rows | [docs/architecture.md](docs/architecture.md) |
+
+Also: search across all comments with highlighted matches and a jump to the thread, drag-and-drop upload, upload progress, remembered name and e-mail, rate limits, health checks, OpenTelemetry.
+
+## Architecture
+
+In detail, with a diagram and numbers: **[docs/architecture.md](docs/architecture.md)**.
+
+```
+src/
+  Comments.Domain/          Entities and rules: Comment, User, Attachment (class hierarchy), value objects, markup parsing
+  Comments.Application/     Use cases: posting, pages, threads; interfaces for the infrastructure
+  Comments.Infrastructure/  EF Core + SQL Server, outbox, Redis, RabbitMQ, Elasticsearch, Blob Storage, SkiaSharp
+  Comments.Api/             ASP.NET Core: REST, GraphQL, SignalR hub, file serving, Angular from wwwroot
+  Comments.Worker/          Background work: publishing the outbox, indexing in Elasticsearch, `reindex`
+  Comments.Web/             Angular 22 (standalone, signals, zoneless)
+  Comments.AppHost/         .NET Aspire: runs everything for development
+  Comments.ServiceDefaults/ OpenTelemetry, health checks
+tools/Comments.Seed/        Data generator for the load test (SqlBulkCopy)
+loadtest/k6/                k6 scenarios
+tests/                      Domain unit tests, API integration tests against real containers
+```
+
+In short:
+
+- **Writes** do synchronously only what the author needs: validation, storing the file and one transaction (comment, author, outbox message). Search indexing and WebSocket broadcasts run asynchronously through a **transactional outbox → RabbitMQ**, so an Elasticsearch or broker failure does not break posting and the event is not lost.
+- **Reads**: Redis with versioned regions (one `INCR` after the commit invalidates), a filtered index per sort, a page in two steps (ids from the narrow index, then rows by key).
+- **Scaling**: the API is stateless; each API instance has its own queue on the events exchange, so RabbitMQ is the SignalR backplane; the worker scales out with competing consumers.
+
+OOP in the domain: entities guard their invariants (`Comment.Reply`, `Comment.Attach`), values are checked in value objects (`UserName`, `EmailAddress`, `HomePage`), attachments are a hierarchy `Attachment` → `ImageAttachment` / `TextAttachment` (table-per-hierarchy in the database), and the domain event `CommentPosted` becomes an integration event in the infrastructure layer.
+
+## Database
+
+SQL Server; EF Core migrations ([`Persistence/Migrations`](src/Comments.Infrastructure/Persistence/Migrations)) create the schema when the API starts.
+
+- **[docs/database/schema.mysql.sql](docs/database/schema.mysql.sql)** — the model in MySQL syntax for **MySQL Workbench**: `File → Import → Reverse Engineer MySQL Create Script…` builds the EER diagram (or just `File → Open SQL Script`).
+- [docs/database/schema.sqlserver.sql](docs/database/schema.sqlserver.sql) — the exact DDL the migrations apply.
+
+```mermaid
+erDiagram
+    Users ||--o{ Comments : posts
+    Comments ||--o{ Comments : "ParentId (reply to)"
+    Comments ||--o{ Comments : "RootId (thread)"
+    Comments ||--o| Attachments : has
+    Users { int Id PK; varchar UserName; varchar Email UK; nvarchar HomePage; datetimeoffset CreatedAt; datetimeoffset LastSeenAt }
+    Comments { bigint Id PK; bigint ParentId FK; bigint RootId FK; int Depth; int UserId FK; varchar UserName; varchar Email; nvarchar HomePage; nvarchar Html; datetimeoffset CreatedAt; int ReplyCount; varchar IpAddress; nvarchar UserAgent }
+    Attachments { uniqueidentifier Id PK; bigint CommentId FK; varchar Type; nvarchar FileName; varchar StorageKey UK; varchar ContentType; bigint SizeBytes; int Width; int Height; bit WasResized }
+    OutboxMessages { bigint Id PK; varchar Type; nvarchar Payload; datetimeoffset OccurredAt; datetimeoffset ProcessedAt; int Attempts; nvarchar LastError }
+```
+
+Why:
+
+- **The tree is an adjacency list plus `RootId`.** `ParentId` says what was answered; `RootId` gives the whole thread as one range of the `(RootId, Id)` index without a recursive CTE. Relationships never change, so the redundancy is safe. A `CHECK` keeps it consistent: a root has neither parent nor root, a reply has both.
+- **The author is stored on the comment.** Name, e-mail and home page are kept as entered when posting, and sorting by them uses an index without a `JOIN`. `Users` is the directory of people (unique case-insensitive e-mail, last seen time).
+- **Filtered indexes** `(key, Id) INCLUDE (ParentId) WHERE ParentId IS NULL`, one per sort. `INCLUDE (ParentId)` is not redundant: without it SQL Server re-checks the filter with a key lookup for every row an `OFFSET` skips and prefers scanning the whole table. On a million rows the last page took 7.4 s cold; with it, 0.13 s.
+- **Files live in Blob Storage**; the database holds only metadata and the key.
+
+## API
+
+| Method | Path | What it does |
+| --- | --- | --- |
+| `GET` | `/api/comments?page=&sort=createdAt\|userName\|email&direction=desc\|asc` | A page of top-level comments (25) |
+| `GET` | `/api/comments/{id}` | One comment |
+| `GET` | `/api/comments/{rootId}/thread?after=` | A thread's replies in id order, up to 200, cursor `nextAfter` |
+| `POST` | `/api/comments` | Post, `multipart/form-data`: `userName, email, homePage, text, parentId, captchaId, captchaAnswer, file` |
+| `POST` | `/api/comments/preview` | `{ text }` → `{ html, errors }` |
+| `GET` | `/api/captcha` | `{ id, image }` — the picture as a data URL |
+| `GET` | `/api/search?q=&page=` | Full-text search (Elasticsearch) |
+| `GET` | `/files/{images\|texts}/{key}` | An attachment |
+| `POST` | `/graphql` | GraphQL: `comments`, `comment`, `thread`, `search` |
+| WS | `/hubs/comments` | SignalR: the `commentPosted` event |
+| `GET` | `/health`, `/alive` | Readiness and liveness checks |
+
+GraphQL example:
+
+```graphql
+query {
+  comments(page: 1, sort: USER_NAME, direction: ASC) { totalCount items { id userName replyCount } }
+  search(query: "research") { total hits { id snippet } }
+}
+```
+
+## Security
+
+- **XSS.** Comment text is never passed through: a new XHTML document is built from the allowed tags only, text and attributes are re-encoded, `href` must be `http(s)://` (no `javascript:` or `data:`), and links get `rel="nofollow ugc noopener"`. Angular sanitizes `[innerHTML]` as well. A strict `Content-Security-Policy` (`script-src 'self'`, no inline scripts) would stop a script even if one got through. Elasticsearch escapes search snippets itself (`encoder: html`). User Name is Latin letters and digits only, Home page http(s) only.
+- **SQL injection.** All queries are parameterized EF Core; the one hand-written SQL statement (claiming outbox rows) is an interpolated `FromSql`, which is parameterized too. Sorting is an enumeration, not a string: `?sort=Id;DROP TABLE` → `400` (covered by a test).
+- **Files.** The type is detected from the content; images are re-encoded (polyglots and metadata do not survive re-encoding); the server generates the stored names; responses carry `X-Content-Type-Options: nosniff`, and text files `Content-Security-Policy: sandbox`.
+- **Abuse.** Single-use CAPTCHA, per-IP rate limits on posting, CAPTCHA, preview and search, a request size limit (6 MB) and an image pixel limit.
+- **CSRF** does not apply: no cookies or sessions, and the CAPTCHA protects posting.
+
+## Load (Middle+)
+
+The estimate, decisions and measurements: **[docs/architecture.md](docs/architecture.md#load-test)**.
+
+100k users a day mean ~50 rps in the busiest hour and ~150 rps in spikes, with about 30 reads per write. On 1,000,000 comments (generator [`tools/Comments.Seed`](tools/Comments.Seed)) the k6 scenario [`loadtest/k6/comments.js`](loadtest/k6/comments.js) measured, on one machine with one API instance:
+
+| Profile | Load | Errors | p95 list / thread / search / post | Live: write → client, p95 |
+| --- | --- | --- | --- | --- |
+| `peak` | 171 rps + 500 WebSockets | 0% | 32 / 3 / 53 / 16 ms | 309 ms |
+| `stress` (×3) | 513 rps + 1,500 WebSockets | 0% | 108 / 50 / 95 / 63 ms | 389 ms |
+
+To repeat: `docker compose -f docker-compose.yml -f docker-compose.loadtest.yml …` — the commands are in [docs/architecture.md](docs/architecture.md#how-to-repeat).
+
+## Tests
+
+```bash
+dotnet test                                                  # needs Docker
+cd src/Comments.Web && npm ci && npx ng test --watch=false
+```
+
+- **Domain** (57 tests): markup and XHTML rules (including XSS vectors), value objects.
+- **API** (24 tests): real SQL Server, Redis, RabbitMQ, Elasticsearch and Azurite (Testcontainers), with the worker's background services in the same process. They cover posting, validation of every field, single-use CAPTCHA, sorting and paging, threads, image scaling, files, the outbox, GraphQL, and a comment's whole path: outbox → RabbitMQ → SignalR client and the search index.
+- **Angular** (27 tests, Vitest): client-side markup rules, building the reply tree.
+
+CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs all of this and builds the Docker images.
+
+## Git branches
+
+`main` holds releases, `develop` is the integration branch; each part was built on its own `feature/*` branch and merged into `develop` with `--no-ff`, so the branching shows in `git log --graph`:
+
+```
+feature/domain-persistence → feature/comments-api → feature/angular-client → feature/messaging-realtime
+→ feature/graphql-search → feature/docker-ci → feature/load-test → feature/azure-docs  (each → develop)
+develop → main  (release v1.0.0)
+```
+
+## Deploying to Azure
+
+One VM with docker compose (Caddy with automatic HTTPS from Let's Encrypt) plus Azure Blob Storage for attachments. Instructions and scripts: **[deploy/azure](deploy/azure/README.md)**.
+
+## Trade-offs
+
+- **Page numbers instead of a cursor.** The task asks for pages, so the list uses `OFFSET` over a narrow index: the cost grows with the page number (the last of 12,000 pages takes 0.13 s cold) but stays acceptable. An endless feed would use keyset paging, as threads already do.
+- **The reply counter on the root** is a hot row for a very popular thread (every reply updates the same row). Not a problem at these volumes; beyond them, a counter in Redis flushed to the database periodically.
+- **Rate limits are per instance.** Behind a load balancer with N instances the effective limit is N times higher; the CAPTCHA is the main gate.
+- **Live updates are best effort.** A client that was disconnected sees missed comments after a reload; there is no redelivery to the browser.
+- **The CAPTCHA** is home-grown, which suits a test task; production would use reCAPTCHA or Turnstile.
