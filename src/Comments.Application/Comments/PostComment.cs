@@ -110,11 +110,8 @@ public sealed class PostCommentHandler(
     {
         try
         {
-            await cache.InvalidateAsync(CacheRegion.TopLevel, CancellationToken.None);
-            if (comment.RootId is { } rootId)
-            {
-                await cache.InvalidateAsync(CacheRegion.Thread(rootId), CancellationToken.None);
-            }
+            var region = comment.RootId is { } rootId ? CacheRegion.Thread(rootId) : CacheRegion.TopLevel;
+            await cache.InvalidateAsync(region, CancellationToken.None);
         }
         catch (Exception ex)
         {
