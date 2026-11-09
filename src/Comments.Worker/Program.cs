@@ -3,7 +3,8 @@ using Comments.Infrastructure.Messaging;
 using Comments.Infrastructure.Search;
 
 // The background side of the system: publishes the outbox to RabbitMQ and indexes comments in Elasticsearch.
-// One-off commands: "reindex" rebuilds the search index from SQL Server; "replay" returns dead-lettered events to their queues.
+// One-off commands: "reindex" rebuilds the search index from SQL Server; "replay" returns dead-lettered events to their
+// queues and releases parked outbox messages.
 var builder = Host.CreateApplicationBuilder(args);
 builder.AddServiceDefaults();
 
@@ -22,12 +23,16 @@ if (args.Contains("reindex", StringComparer.OrdinalIgnoreCase))
 
 if (args.Contains("replay", StringComparer.OrdinalIgnoreCase))
 {
+    builder.AddCommentsPersistence();
     builder.AddCommentsMessaging();
     builder.Services.AddSingleton<DeadLetterReplayer>();
+    builder.Services.AddScoped<OutboxParking>();
 
     using var host = builder.Build();
     var replayed = await host.Services.GetRequiredService<DeadLetterReplayer>().RunAsync(CancellationToken.None);
-    Console.WriteLine($"Replayed {replayed} dead-lettered messages.");
+    await using var scope = host.Services.CreateAsyncScope();
+    var unparked = await scope.ServiceProvider.GetRequiredService<OutboxParking>().UnparkAllAsync(CancellationToken.None);
+    Console.WriteLine($"Replayed {replayed} dead-lettered messages and released {unparked} parked outbox messages.");
     return;
 }
 
