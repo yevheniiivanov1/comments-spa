@@ -1,10 +1,14 @@
+using System.Text;
+using System.Text.Json;
 using Comments.Application.Abstractions;
 using Comments.Application.Comments;
 using Comments.Infrastructure.Json;
+using Comments.Infrastructure.Messaging;
 using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using RabbitMQ.Client;
 
 namespace Comments.Api.Tests;
 
@@ -66,6 +70,56 @@ public sealed class PipelineTests(ApiFactory factory) : IDisposable
         var hit = await SearchUntilFoundAsync("studied competitor");
 
         Assert.Equal(posted.Id, hit.Id);
+    }
+
+    [Fact]
+    public async Task Comment_posted_while_Elasticsearch_is_down_is_indexed_once_it_is_back()
+    {
+        await factory.ConsumersReadyAsync();
+        CommentDto posted;
+
+        await using (await factory.PauseElasticsearchAsync())
+        {
+            posted = await Api.PostOkAsync("Outage", "outage@example.com", "glyptodons survived the outage");
+
+            // Long enough for several failed attempts (2 s request timeout, 1 s retry delay in tests).
+            await Task.Delay(TimeSpan.FromSeconds(8), Ct);
+        }
+
+        var hit = await SearchUntilFoundAsync("glyptodons");
+        Assert.Equal(posted.Id, hit.Id);
+        Assert.Equal(0u, await DeadLetterCountAsync());
+    }
+
+    [Fact]
+    public async Task Replay_returns_dead_lettered_events_to_their_queue()
+    {
+        await factory.ConsumersReadyAsync();
+        var comment = new CommentDto(990_000_001, null, null, 0, "Replayed", "replayed@example.com", null, "a lost megatherium", DateTimeOffset.UtcNow, 0, null);
+        await DeadLetterAsync(new CommentPostedMessage(comment));
+
+        var replayed = await ActivatorUtilities.CreateInstance<DeadLetterReplayer>(factory.Services).RunAsync(Ct);
+
+        Assert.Equal(1, replayed);
+        Assert.Equal(comment.Id, (await SearchUntilFoundAsync("megatherium")).Id);
+    }
+
+    /// <summary>Publishes a message to the dead-letter exchange as the broker would after the indexer gave up on it.</summary>
+    private async Task DeadLetterAsync(CommentPostedMessage message)
+    {
+        var connection = factory.Services.GetRequiredService<IConnection>();
+        await using var channel = await connection.CreateChannelAsync(cancellationToken: Ct);
+        var death = new Dictionary<string, object?> { ["queue"] = Encoding.UTF8.GetBytes(RabbitMqTopology.SearchIndexerQueue), ["reason"] = Encoding.UTF8.GetBytes("rejected") };
+        var properties = new BasicProperties { Headers = new Dictionary<string, object?> { ["x-death"] = new List<object> { death } } };
+        await channel.BasicPublishAsync(RabbitMqTopology.DeadLetterExchange, CommentPostedMessage.RoutingKey, false, properties,
+            JsonSerializer.SerializeToUtf8Bytes(message, JsonDefaults.Options), Ct);
+    }
+
+    private async Task<uint> DeadLetterCountAsync()
+    {
+        var connection = factory.Services.GetRequiredService<IConnection>();
+        await using var channel = await connection.CreateChannelAsync(cancellationToken: Ct);
+        return (await channel.QueueDeclarePassiveAsync(RabbitMqTopology.DeadLetterQueue, Ct)).MessageCount;
     }
 
     private async Task<SearchHit> SearchUntilFoundAsync(string query)
