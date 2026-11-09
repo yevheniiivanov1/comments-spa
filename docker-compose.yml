@@ -13,9 +13,11 @@ x-connection-strings: &connection-strings
 
 services:
   sqlserver:
-    image: mcr.microsoft.com/mssql/server:2022-latest
+    image: mcr.microsoft.com/mssql/server:2022-CU27-GDR1-ubuntu-22.04
     environment:
       ACCEPT_EULA: "Y"
+      # Express is free for production use (10 GB per database, enough here); Developer is for development only.
+      MSSQL_PID: ${MSSQL_PID:-Express}
       MSSQL_SA_PASSWORD: ${SQL_PASSWORD:-Comments_Dev_2026!}
       MSSQL_MEMORY_LIMIT_MB: 2048
     healthcheck:
@@ -29,7 +31,7 @@ services:
     restart: unless-stopped
 
   redis:
-    image: redis:8-alpine
+    image: redis:8.6-alpine
     command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru", "--save", ""]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -72,7 +74,7 @@ services:
     restart: unless-stopped
 
   azurite:
-    image: mcr.microsoft.com/azure-storage/azurite:latest
+    image: mcr.microsoft.com/azure-storage/azurite:3.37.0
     command: ["azurite-blob", "--blobHost", "0.0.0.0", "--location", "/data", "--skipApiVersionCheck", "--loose"]
     volumes:
       - blob-data:/data
@@ -85,7 +87,6 @@ services:
     image: comments-api
     environment:
       <<: *connection-strings
-      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
       Captcha__ExposeAnswerForTesting: ${CAPTCHA_EXPOSE_ANSWER:-false}
       RateLimits__PostsPerMinute: ${POSTS_PER_MINUTE:-10}
       RateLimits__CaptchasPerMinute: ${CAPTCHAS_PER_MINUTE:-30}

@@ -21,6 +21,12 @@ builder.Services.AddSignalR().AddJsonProtocol(options => JsonDefaults.Configure(
 builder.Services.AddHostedService<LiveUpdatesConsumer>();
 builder.Services.AddGraphQLServer()
     .AddQueryType<CommentsQuery>()
+    .AddMaxExecutionDepthRule(8)
+    .ModifyCostOptions(options =>
+    {
+        options.EnforceCostLimits = true;
+        options.MaxFieldCost = GraphQLLimits.MaxFieldCost;
+    })
     .ModifyRequestOptions(options => options.IncludeExceptionDetails = builder.Environment.IsDevelopment());
 
 var app = builder.Build();
@@ -39,9 +45,10 @@ app.MapCommentEndpoints();
 app.MapCaptchaEndpoints();
 app.MapFileEndpoints();
 app.MapSearchEndpoints();
-app.MapGraphQL();
+app.MapGraphQL().RequireRateLimiting(RateLimiting.GraphQLPolicy);
 app.MapHub<CommentsHub>(CommentsHub.Path);
 app.MapFallbackToFile("index.html");
+app.MapUnknownRoutesToNotFound("/api", "/files", "/hubs");
 
 await app.MigrateDatabaseAsync();
 await app.RunAsync();
