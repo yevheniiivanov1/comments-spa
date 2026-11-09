@@ -34,6 +34,7 @@ import { Lightbox } from './shared/lightbox';
     <app-lightbox />
   `,
   styleUrl: './app.scss',
+  host: { '(document:click)': 'openCommentLinksInNewTab($event)' },
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class App {
@@ -46,6 +47,15 @@ export class App {
     connecting: 'Connecting to live updates',
     offline: 'Live updates are unavailable; reload to see new comments',
   };
+
+  /** Links written in comments lead to other sites, so they open in a new tab instead of replacing the app. */
+  protected openCommentLinksInNewTab(event: MouseEvent): void {
+    const link = (event.target as Element | null)?.closest<HTMLAnchorElement>('.comment-html a[href]');
+    if (link && event.button === 0 && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+      event.preventDefault();
+      window.open(link.href, '_blank', 'noopener,noreferrer');
+    }
+  }
 
   protected search(query: string): void {
     const q = query.trim();
