@@ -16,10 +16,19 @@ internal static class CaptchaEndpoints
         return app;
     }
 
-    private static async Task<Ok<CaptchaResponse>> CreateAsync(ICaptchaService captcha, HttpContext http, CancellationToken cancellationToken)
+    private static async Task<Results<Ok<CaptchaResponse>, ProblemHttpResult>> CreateAsync(ICaptchaService captcha, HttpContext http, CancellationToken cancellationToken)
     {
-        var challenge = await captcha.CreateAsync(cancellationToken);
         http.Response.Headers.CacheControl = "no-store";
+        CaptchaChallenge challenge;
+        try
+        {
+            challenge = await captcha.CreateAsync(cancellationToken);
+        }
+        catch (CaptchaUnavailableException)
+        {
+            return TypedResults.Problem(CaptchaUnavailableException.UserMessage, statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+
         return TypedResults.Ok(new CaptchaResponse(
             challenge.Id,
             "data:image/png;base64," + Convert.ToBase64String(challenge.Png),

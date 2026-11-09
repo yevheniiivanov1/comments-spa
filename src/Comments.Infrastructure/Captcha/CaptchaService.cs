@@ -35,7 +35,14 @@ internal sealed class CaptchaService(IConnectionMultiplexer redis, CaptchaRender
         var answer = RandomNumberGenerator.GetString(Alphabet, Length);
         var id = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16));
 
-        await redis.GetDatabase().StringSetAsync(Key(id), Normalize(answer), options.Value.Lifetime);
+        try
+        {
+            await redis.GetDatabase().StringSetAsync(Key(id), Normalize(answer), options.Value.Lifetime);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new CaptchaUnavailableException(ex);
+        }
 
         return new CaptchaChallenge(id, renderer.Render(answer), options.Value.ExposeAnswerForTesting ? answer : null);
     }
@@ -47,7 +54,15 @@ internal sealed class CaptchaService(IConnectionMultiplexer redis, CaptchaRender
             return false;
         }
 
-        var expected = await redis.GetDatabase().StringGetDeleteAsync(Key(id));
+        RedisValue expected;
+        try
+        {
+            expected = await redis.GetDatabase().StringGetDeleteAsync(Key(id));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new CaptchaUnavailableException(ex);
+        }
         if (!expected.HasValue)
         {
             return false;
