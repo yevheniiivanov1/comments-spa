@@ -129,7 +129,7 @@ public sealed class PostCommentHandler(
         db.ChangeTracker.Clear();
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
 
-        var now = time.GetUtcNow();
+        var now = TruncateToMilliseconds(time.GetUtcNow());
         var user = await db.Users.FirstOrDefaultAsync(u => u.Email == author.Email.Value, cancellationToken);
         if (user is null)
         {
@@ -163,6 +163,10 @@ public sealed class PostCommentHandler(
         await transaction.CommitAsync(cancellationToken);
         return comment;
     }
+
+    /// <summary>The column keeps milliseconds; the response must show the same instant a later read returns.</summary>
+    private static DateTimeOffset TruncateToMilliseconds(DateTimeOffset value) =>
+        new(value.Ticks - value.Ticks % TimeSpan.TicksPerMillisecond, value.Offset);
 
     private async Task DeleteOrphanAsync(string storageKey)
     {
