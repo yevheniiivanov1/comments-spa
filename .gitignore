@@ -22,3 +22,6 @@ deploy/azure/.env
 .vscode/*
 !.vscode/extensions.json
 .DS_Store
+
+# Local secrets for docker compose
+.env
