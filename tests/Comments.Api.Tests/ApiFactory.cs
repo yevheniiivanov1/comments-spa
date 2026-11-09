@@ -50,7 +50,8 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 
         builder.UseEnvironment("Testing");
         builder.UseSetting("ConnectionStrings:commentsdb", sql.ConnectionString);
-        builder.UseSetting("ConnectionStrings:redis", _redis.GetConnectionString());
+        // Short timeouts so tests that pause Redis see failures in about a second, as a production client would after its own timeout.
+        builder.UseSetting("ConnectionStrings:redis", _redis.GetConnectionString() + ",asyncTimeout=1000,syncTimeout=1000,abortConnect=false");
         builder.UseSetting("ConnectionStrings:rabbitmq", _rabbit.GetConnectionString());
         builder.UseSetting("ConnectionStrings:elasticsearch", $"http://{_elastic.Hostname}:{_elastic.GetMappedPublicPort(9200)}");
         builder.UseSetting("ConnectionStrings:blobs", _azurite.GetConnectionString());
@@ -68,10 +69,22 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
                 : Task.CompletedTask))
             .WaitAsync(TimeSpan.FromSeconds(60));
 
+    /// <summary>Pauses the Redis container (requests hang and time out, like a stalled server) until the returned scope ends.</summary>
+    public async Task<IAsyncDisposable> PauseRedisAsync()
+    {
+        await _redis.PauseAsync();
+        return new Resume(() => _redis.UnpauseAsync());
+    }
+
     public async Task<T> WithDbAsync<T>(Func<CommentsDbContext, Task<T>> query)
     {
         await using var scope = Services.CreateAsyncScope();
         return await query(scope.ServiceProvider.GetRequiredService<CommentsDbContext>());
+    }
+
+    private sealed class Resume(Func<Task> resume) : IAsyncDisposable
+    {
+        public async ValueTask DisposeAsync() => await resume();
     }
 
     public override async ValueTask DisposeAsync()
