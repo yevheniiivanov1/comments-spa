@@ -1,0 +1,44 @@
+# Load-test overlay. Never use it for a public stand: it returns CAPTCHA answers and lifts the posting limits.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.loadtest.yml up -d --build
+#   docker compose -f docker-compose.yml -f docker-compose.loadtest.yml run --rm seed --comments 1000000 --users 100000
+#   docker compose -f docker-compose.yml -f docker-compose.loadtest.yml run --rm worker reindex
+#   docker compose -f docker-compose.yml -f docker-compose.loadtest.yml run --rm k6
+#
+# Results are written to loadtest/results/.
+
+services:
+  api:
+    environment:
+      Captcha__ExposeAnswerForTesting: "true"
+      RateLimits__PostsPerMinute: "1000000"
+      RateLimits__CaptchasPerMinute: "1000000"
+      RateLimits__PreviewsPerMinute: "1000000"
+      RateLimits__SearchesPerMinute: "1000000"
+
+  seed:
+    profiles: [tools]
+    build:
+      context: .
+      target: seed
+    image: comments-seed
+    environment:
+      ConnectionStrings__commentsdb: Server=sqlserver;Database=comments;User Id=sa;Password=${SQL_PASSWORD:-Comments_Dev_2026!};TrustServerCertificate=true
+      ConnectionStrings__redis: redis:6379
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+
+  k6:
+    profiles: [tools]
+    image: grafana/k6:2.3.0
+    command: ["run", "/scripts/comments.js"]
+    environment:
+      BASE_URL: http://api:8080
+      PROFILE: ${LOAD_PROFILE:-peak}
+    volumes:
+      - ./loadtest/k6:/scripts:ro
+      - ./loadtest/results:/results
+    depends_on:
+      api:
+        condition: service_healthy
