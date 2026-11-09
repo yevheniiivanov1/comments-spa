@@ -2,7 +2,7 @@
 
 Test task "SPA application: Comments" (Middle+ level). Users post comments and reply to them at any depth, attach images and text files, see new comments without reloading the page and search the full text.
 
-![The list of threads and an open thread with replies](docs/screenshot.png)
+![The list of threads and an open thread with replies](docs/screenshot.jpg)
 
 **Stack:** .NET 10 (ASP.NET Core, EF Core 10, SignalR, Hot Chocolate GraphQL), SQL Server 2022, Redis, RabbitMQ, Elasticsearch, Azure Blob Storage (Azurite locally), Angular 22, Docker, .NET Aspire, k6.
 
