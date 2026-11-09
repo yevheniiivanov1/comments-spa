@@ -149,9 +149,13 @@ namespace Comments.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("IX_Comments_TopLevel_CreatedAt")
                         .HasFilter("[ParentId] IS NULL");
 
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("CreatedAt", "Id"), new[] { "ParentId" });
+
                     b.HasIndex("Email", "Id")
                         .HasDatabaseName("IX_Comments_TopLevel_Email")
                         .HasFilter("[ParentId] IS NULL");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("Email", "Id"), new[] { "ParentId" });
 
                     b.HasIndex("RootId", "Id")
                         .HasDatabaseName("IX_Comments_RootId_Id")
@@ -160,6 +164,8 @@ namespace Comments.Infrastructure.Persistence.Migrations
                     b.HasIndex("UserName", "Id")
                         .HasDatabaseName("IX_Comments_TopLevel_UserName")
                         .HasFilter("[ParentId] IS NULL");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("UserName", "Id"), new[] { "ParentId" });
 
                     b.ToTable("Comments", null, t =>
                         {
@@ -245,6 +251,8 @@ namespace Comments.Infrastructure.Persistence.Migrations
                     b.HasIndex("Id")
                         .HasDatabaseName("IX_OutboxMessages_Pending")
                         .HasFilter("[ProcessedAt] IS NULL");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("Id"), new[] { "ProcessedAt" });
 
                     b.ToTable("OutboxMessages", (string)null);
                 });

@@ -29,6 +29,17 @@ COPY src/Comments.Worker/ src/Comments.Worker/
 RUN dotnet publish src/Comments.Api/Comments.Api.csproj -c Release -o /out/api --no-restore \
  && dotnet publish src/Comments.Worker/Comments.Worker.csproj -c Release -o /out/worker --no-restore
 
+FROM build AS seed-build
+COPY tools/Comments.Seed/ tools/Comments.Seed/
+RUN dotnet publish tools/Comments.Seed/Comments.Seed.csproj -c Release -o /out/seed
+
+# Load-test data generator (docker-compose.loadtest.yml).
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS seed
+WORKDIR /app
+COPY --from=seed-build /out/seed ./
+USER $APP_UID
+ENTRYPOINT ["dotnet", "Comments.Seed.dll"]
+
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS worker
 WORKDIR /app
 COPY --from=build /out/worker ./
