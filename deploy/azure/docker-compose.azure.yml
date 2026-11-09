@@ -1,0 +1,68 @@
+# Production overlay for one Azure VM:
+#   docker compose -f docker-compose.yml -f deploy/azure/docker-compose.azure.yml --env-file deploy/azure/.env up -d --build
+# Caddy terminates HTTPS (Let's Encrypt) for SITE_ADDRESS and is the only service published on the host;
+# attachments go to Azure Blob Storage (BLOB_CONNECTION_STRING), so the Azurite emulator is not started.
+
+services:
+  caddy:
+    image: caddy:2.10-alpine
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS to the VM's DNS name}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/azure/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  api:
+    ports: !reset []
+    environment:
+      ConnectionStrings__blobs: ${BLOB_CONNECTION_STRING:?set BLOB_CONNECTION_STRING to the storage account connection string}
+    depends_on: !override
+      sqlserver:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 768m
+
+  worker:
+    deploy:
+      resources:
+        limits:
+          memory: 384m
+
+  azurite:
+    profiles: [emulator]
+
+  rabbitmq:
+    ports: !reset []
+
+  sqlserver:
+    deploy:
+      resources:
+        limits:
+          memory: 2560m
+
+  elasticsearch:
+    deploy:
+      resources:
+        limits:
+          memory: 1280m
+
+volumes:
+  caddy-data:
+  caddy-config:
