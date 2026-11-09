@@ -76,11 +76,12 @@ public sealed class CommentApiTests(ApiFactory factory) : IDisposable
     }
 
     [Fact]
-    public async Task Replies_form_a_thread_and_update_the_cached_list()
+    public async Task Replies_form_a_thread_and_refresh_the_cached_thread_but_not_the_list()
     {
         var root = await Api.PostOkAsync("ThreadRoot", "root@example.com", "root");
         var before = await Api.GetAsync<CommentPage>("/api/comments");
         Assert.Equal(0, before.Items.Single(c => c.Id == root.Id).ReplyCount);
+        Assert.Empty((await Api.GetAsync<ThreadPage>($"/api/comments/{root.Id}/thread")).Items);
 
         var reply = await Api.PostOkAsync("Replier", "replier@example.com", "reply", parentId: root.Id);
         var nested = await Api.PostOkAsync("Nested", "nested@example.com", "nested", parentId: reply.Id);
@@ -91,9 +92,11 @@ public sealed class CommentApiTests(ApiFactory factory) : IDisposable
         Assert.Equal((reply.Id, root.Id, 2), (thread.Items[1].ParentId, thread.Items[1].RootId, thread.Items[1].Depth));
         Assert.Null(thread.NextAfter);
 
-        var after = await Api.GetAsync<CommentPage>("/api/comments");
-        Assert.Equal(2, after.Items.Single(c => c.Id == root.Id).ReplyCount);
-        Assert.DoesNotContain(after.Items, c => c.Id == reply.Id);
+        // Replies do not flush the list (its pages expire in 30 s); the count is right in the database at once.
+        var list = await Api.GetAsync<CommentPage>("/api/comments");
+        Assert.Equal(0, list.Items.Single(c => c.Id == root.Id).ReplyCount);
+        Assert.DoesNotContain(list.Items, c => c.Id == reply.Id);
+        Assert.Equal(2, (await Api.GetAsync<CommentDto>($"/api/comments/{root.Id}")).ReplyCount);
     }
 
     [Fact]
@@ -156,12 +159,18 @@ public sealed class CommentApiTests(ApiFactory factory) : IDisposable
         Assert.Equal((expectedWidth, expectedHeight), (bitmap.Width, bitmap.Height));
     }
 
-    [Fact]
-    public async Task Jpeg_stays_jpeg()
+    [Theory]
+    [InlineData(640, 480, 320, 240)]
+    [InlineData(4000, 3000, 320, 240)]
+    [InlineData(3000, 4000, 180, 240)]
+    public async Task Jpeg_stays_jpeg_and_large_ones_are_decoded_scaled(int width, int height, int expectedWidth, int expectedHeight)
     {
-        var comment = await Api.PostOkAsync(file: ("photo.JPG", Image(640, 480, SKEncodedImageFormat.Jpeg), "image/jpeg"));
+        var comment = await Api.PostOkAsync(file: ("photo.JPG", Image(width, height, SKEncodedImageFormat.Jpeg), "image/jpeg"));
 
-        Assert.Equal(("image/jpeg", 320, 240), (comment.Attachment!.ContentType, comment.Attachment.Width, comment.Attachment.Height));
+        Assert.Equal(("image/jpeg", expectedWidth, expectedHeight), (comment.Attachment!.ContentType, comment.Attachment.Width, comment.Attachment.Height));
+        using var file = await _http.GetAsync(comment.Attachment.Url, Ct);
+        using var bitmap = SKBitmap.Decode(await file.Content.ReadAsByteArrayAsync(Ct));
+        Assert.Equal((expectedWidth, expectedHeight), (bitmap.Width, bitmap.Height));
         Assert.EndsWith(".jpg", comment.Attachment.Url, StringComparison.Ordinal);
     }
 

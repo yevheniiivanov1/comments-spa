@@ -25,8 +25,6 @@ namespace Comments.Infrastructure.Caching;
 /// </summary>
 internal sealed class RedisCommentCache(IConnectionMultiplexer redis, ILogger<RedisCommentCache> logger) : ICommentCache
 {
-    private static readonly TimeSpan EntryLifetime = TimeSpan.FromMinutes(10);
-
     private readonly ConcurrentDictionary<string, Lazy<Task<object?>>> _inFlight = new(StringComparer.Ordinal);
 
     public async Task<T> GetOrCreateAsync<T>(CacheRegion region, string key, Func<CancellationToken, Task<T>> factory, CancellationToken cancellationToken)
@@ -50,7 +48,7 @@ internal sealed class RedisCommentCache(IConnectionMultiplexer redis, ILogger<Re
             return await factory(cancellationToken);
         }
 
-        var own = new Lazy<Task<object?>>(() => LoadAndStoreAsync(cacheKey, factory));
+        var own = new Lazy<Task<object?>>(() => LoadAndStoreAsync(cacheKey, region.Lifetime, factory));
         var load = _inFlight.GetOrAdd(cacheKey, own);
 
         // The request that owns the load runs the factory with its own scoped services (DbContext),
@@ -68,19 +66,19 @@ internal sealed class RedisCommentCache(IConnectionMultiplexer redis, ILogger<Re
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Could not invalidate cache region {Region}; entries expire within {Lifetime}", region.Name, EntryLifetime);
+            logger.LogError(ex, "Could not invalidate cache region {Region}; entries expire within {Lifetime}", region.Name, region.Lifetime);
         }
     }
 
     /// <summary>Runs without the caller's token: other requests may be waiting for the same result.</summary>
-    private async Task<object?> LoadAndStoreAsync<T>(string cacheKey, Func<CancellationToken, Task<T>> factory)
+    private async Task<object?> LoadAndStoreAsync<T>(string cacheKey, TimeSpan lifetime, Func<CancellationToken, Task<T>> factory)
     {
         try
         {
             var value = await factory(CancellationToken.None);
             try
             {
-                await redis.GetDatabase().StringSetAsync(cacheKey, JsonSerializer.SerializeToUtf8Bytes(value, JsonDefaults.Options), EntryLifetime);
+                await redis.GetDatabase().StringSetAsync(cacheKey, JsonSerializer.SerializeToUtf8Bytes(value, JsonDefaults.Options), lifetime);
             }
             catch (Exception ex)
             {

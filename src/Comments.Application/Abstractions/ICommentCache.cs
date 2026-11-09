@@ -12,9 +12,20 @@ public interface ICommentCache
     Task InvalidateAsync(CacheRegion region, CancellationToken cancellationToken);
 }
 
-public readonly record struct CacheRegion(string Name)
+/// <summary>
+/// A group of cache entries invalidated together, and how long its entries live.
+/// <para>
+/// The top-level list is invalidated only when a new thread starts. Replies change the reply counts on its rows, but
+/// flushing every page on every reply would make the list cache useless at the expected write rate; the counts may lag
+/// by up to <see cref="TopLevelLifetime"/>, while open pages get them live over WebSocket. A thread is invalidated by
+/// each reply to it.
+/// </para>
+/// </summary>
+public readonly record struct CacheRegion(string Name, TimeSpan Lifetime)
 {
-    public static CacheRegion TopLevel { get; } = new("top");
+    public static readonly TimeSpan TopLevelLifetime = TimeSpan.FromSeconds(30);
 
-    public static CacheRegion Thread(long rootId) => new($"thread:{rootId}");
+    public static CacheRegion TopLevel { get; } = new("top", TopLevelLifetime);
+
+    public static CacheRegion Thread(long rootId) => new($"thread:{rootId}", TimeSpan.FromMinutes(10));
 }
