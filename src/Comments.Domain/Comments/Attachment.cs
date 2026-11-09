@@ -82,7 +82,7 @@ public sealed class ImageAttachment : Attachment
     public override AttachmentKind Kind => AttachmentKind.Image;
 }
 
-/// <summary>A plain-text (.txt) file up to 100 KB.</summary>
+/// <summary>A plain-text (.txt) file up to 100 KB, stored as uploaded; the content type names its encoding.</summary>
 public sealed class TextAttachment : Attachment
 {
     public const int MaxSizeBytes = 100 * 1024;
@@ -91,8 +91,8 @@ public sealed class TextAttachment : Attachment
     {
     }
 
-    public TextAttachment(string fileName, string storageKey, long sizeBytes)
-        : base(fileName, storageKey, "text/plain; charset=utf-8", sizeBytes)
+    public TextAttachment(string fileName, string storageKey, string contentType, long sizeBytes)
+        : base(fileName, storageKey, contentType, sizeBytes)
     {
         if (sizeBytes is < 0 or > MaxSizeBytes)
         {

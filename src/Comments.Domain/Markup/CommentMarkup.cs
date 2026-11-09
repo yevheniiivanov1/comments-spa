@@ -41,6 +41,9 @@ public static partial class CommentMarkup
         return parser.Run();
     }
 
+    /// <summary>Text content of markup produced by <see cref="Parse"/> (well-formed, so stripping tags is exact).</summary>
+    public static string ToPlainText(string html) => WebUtility.HtmlDecode(AnyTag().Replace(html, string.Empty));
+
     /// <summary>Unifies line breaks and drops control characters that XML 1.0 does not allow.</summary>
     private static string Normalize(string input)
     {
@@ -79,6 +82,9 @@ public static partial class CommentMarkup
 
     [GeneratedRegex(@"[\u0000-\u0008\u000B\u000C\u000E-\u001F￾￿]")]
     private static partial Regex InvalidXmlCharacters();
+
+    [GeneratedRegex("<[^>]*>")]
+    private static partial Regex AnyTag();
 
     private sealed class Parser(string input)
     {
