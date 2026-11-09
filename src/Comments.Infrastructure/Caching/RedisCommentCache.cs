@@ -93,5 +93,74 @@ internal sealed class RedisCommentCache(IConnectionMultiplexer redis, ILogger<Re
         }
     }
 
+    private static readonly TimeSpan CounterLifetime = TimeSpan.FromMinutes(10);
+
+    /// <summary>INCR only an existing counter: a missing one is loaded from the database on the next read.</summary>
+    private const string IncrementIfExists = "if redis.call('EXISTS', KEYS[1]) == 1 then return redis.call('INCR', KEYS[1]) end return -1";
+
+    public async Task<long> GetCounterAsync(string name, Func<CancellationToken, Task<long>> load, CancellationToken cancellationToken)
+    {
+        var key = CounterKey(name);
+        try
+        {
+            var cached = await redis.GetDatabase().StringGetAsync(key);
+            if (cached.HasValue)
+            {
+                return (long)cached;
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Redis read failed for counter {Name}; counting in the database", name);
+            return await load(cancellationToken);
+        }
+
+        var own = new Lazy<Task<object?>>(() => LoadCounterAsync(key, load));
+        var pending = _inFlight.GetOrAdd(key, own);
+        return ReferenceEquals(pending, own)
+            ? (long)(await pending.Value)!
+            : (long)(await pending.Value.WaitAsync(cancellationToken))!;
+    }
+
+    public async Task IncrementCounterAsync(string name)
+    {
+        try
+        {
+            await redis.GetDatabase().ScriptEvaluateAsync(IncrementIfExists, [CounterKey(name)]);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Could not increment counter {Name}; it is recounted within {Lifetime}", name, CounterLifetime);
+        }
+    }
+
+    /// <summary>
+    /// SET NX: if an increment created the value meanwhile, it is newer than this count and wins. A count read just before
+    /// a commit can be one short until the key expires; for a "threads in total" figure that is acceptable.
+    /// </summary>
+    private async Task<object?> LoadCounterAsync(string key, Func<CancellationToken, Task<long>> load)
+    {
+        try
+        {
+            var value = await load(CancellationToken.None);
+            try
+            {
+                await redis.GetDatabase().StringSetAsync(key, value, CounterLifetime, When.NotExists);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Redis write failed for {Key}", key);
+            }
+
+            return value;
+        }
+        finally
+        {
+            _inFlight.TryRemove(key, out _);
+        }
+    }
+
+    private static string CounterKey(string name) => $"comments:counter:{name}";
+
     private static string VersionKey(CacheRegion region) => $"comments:{region.Name}:version";
 }

@@ -80,6 +80,11 @@ public sealed class FailureTests(ApiFactory factory) : IDisposable
             factory(cancellationToken);
 
         public Task InvalidateAsync(CacheRegion region, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task<long> GetCounterAsync(string name, Func<CancellationToken, Task<long>> load, CancellationToken cancellationToken) =>
+            load(cancellationToken);
+
+        public Task IncrementCounterAsync(string name) => Task.CompletedTask;
     }
 
     /// <summary>A cache whose invalidation times out, as StackExchange.Redis does when Redis stalls.</summary>
@@ -90,5 +95,10 @@ public sealed class FailureTests(ApiFactory factory) : IDisposable
 
         public Task InvalidateAsync(CacheRegion region, CancellationToken cancellationToken) =>
             throw new TimeoutException("Simulated Redis timeout");
+
+        public Task<long> GetCounterAsync(string name, Func<CancellationToken, Task<long>> load, CancellationToken cancellationToken) =>
+            inner.GetCounterAsync(name, load, cancellationToken);
+
+        public Task IncrementCounterAsync(string name) => throw new TimeoutException("Simulated Redis timeout");
     }
 }

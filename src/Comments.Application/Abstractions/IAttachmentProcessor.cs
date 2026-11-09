@@ -2,7 +2,10 @@ using Comments.Domain.Comments;
 
 namespace Comments.Application.Abstractions;
 
-/// <summary>Checks an uploaded file and turns it into what is stored: images re-encoded and downscaled, text converted to UTF-8.</summary>
+/// <summary>
+/// Checks an uploaded file and turns it into what is stored: images re-encoded and scaled down (a GIF that already fits is kept
+/// as uploaded), text kept as uploaded with its detected encoding in the content type.
+/// </summary>
 public interface IAttachmentProcessor
 {
     Task<AttachmentProcessingResult> ProcessAsync(FileUpload upload, CancellationToken cancellationToken);
