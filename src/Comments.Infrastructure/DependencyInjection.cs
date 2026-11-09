@@ -61,7 +61,10 @@ public static class DependencyInjection
     {
         services.AddSingleton(TimeProvider.System);
         services.AddOptions<SearchIndexingOptions>().BindConfiguration(SearchIndexingOptions.Section);
+        services.AddOptions<OutboxOptions>().BindConfiguration(OutboxOptions.Section);
         services.AddHostedService<OutboxDispatcher>();
+        services.AddSingleton<OutboxCleaner>();
+        services.AddHostedService(sp => sp.GetRequiredService<OutboxCleaner>());
         services.AddHostedService<SearchIndexerConsumer>();
         services.AddScoped<SearchReindexer>();
         return services;
