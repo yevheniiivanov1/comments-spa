@@ -117,8 +117,9 @@ export class CommentsStore {
   }
 
   /**
-   * Adds a reply to its thread when every reply of that thread is already loaded (otherwise it shows up with the next
-   * page) and bumps the root's reply count; false if the reply was already there.
+   * Adds a reply to its loaded thread and bumps the root's reply count; false if the reply was already there.
+   * A reply is the newest comment of its thread, so it is safe to show it before the pages in between are loaded:
+   * "Load more" continues from the thread's own cursor and duplicates are skipped.
    */
   private insertReply(comment: CommentDto): boolean {
     const rootId = comment.rootId!;
@@ -126,7 +127,7 @@ export class CommentsStore {
     if (thread?.items.some((c) => c.id === comment.id)) {
       return false;
     }
-    if (thread && thread.items.length > 0 && !thread.loading && thread.nextAfter === null) {
+    if (thread && thread.items.length > 0 && !thread.loading) {
       this.patchThread(rootId, { items: [...thread.items, comment] });
     }
     this.page.value.update((page) =>
