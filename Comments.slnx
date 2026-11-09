@@ -1,4 +1,8 @@
 <Solution>
-  <Folder Name="/src/" />
-  <Folder Name="/tests/" />
+  <Folder Name="/src/">
+    <Project Path="src/Comments.Domain/Comments.Domain.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Comments.Domain.Tests/Comments.Domain.Tests.csproj" />
+  </Folder>
 </Solution>
