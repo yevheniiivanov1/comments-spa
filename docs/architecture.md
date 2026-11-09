@@ -1,15 +1,15 @@
 # Architecture and load
 
-The Middle+ condition: **"1,000,000 messages, 100k users in 24 hours"**. Below: how I read it, what it means in requests per second, which design decisions cover it, and what the load test showed.
+The target: **a million comments stored and 100,000 users a day**, with headroom for a much heavier write load. Below: what that means in requests per second, which design decisions cover it, and what the load test showed.
 
-## How the condition is read
+## Target load
 
-The sentence allows two readings, and the design has to hold under both:
+Two cases, and the design has to hold under both:
 
-- **A. One million messages stored, 100,000 users a day.** The estimate below is built on this one: the table holds a million comments, and a normal day of 100k users brings reads and ~50k new comments.
-- **B. One million new messages a day.** That is 11.6 posts a second on average and, with 12% of the day in the busiest hour, ~33 a second then, ~60 in spikes.
+- **Normal traffic.** The table holds a million comments, and a day of 100k users brings mostly reads and ~50k new comments. The estimate below is built on this case.
+- **Write-heavy traffic.** A million *new* comments a day: 11.6 posts a second on average and, with 12% of the day in the busiest hour, ~33 a second then, ~60 in spikes.
 
-The `peak` and `stress` profiles of the load test model A; the `write` profile models B at its spike rate (60 posts a second on top of reads and 300 live readers). Both run against a database already holding a million comments.
+The `peak` and `stress` profiles of the load test model normal traffic; the `write` profile models the write-heavy case at its spike rate (60 posts a second on top of reads and 300 live readers). Both run against a database already holding a million comments.
 
 ## Diagram
 
@@ -35,7 +35,7 @@ Write path: `POST /api/comments` → validation (fields, CAPTCHA, markup, file) 
 
 Read path: `GET /api/comments` (a page of top-level comments) and `GET /api/comments/{id}/thread` (a thread) → Redis → on a miss, SQL Server through an index built for that query.
 
-## Load estimate (reading A)
+## Load estimate (normal traffic)
 
 | Assumption | Value |
 | --- | --- |
@@ -69,11 +69,11 @@ The k6 `peak` profile has headroom over the spike: 120 rps of list reads, 50 rps
 - **Denormalized author.** Name, e-mail and home page are stored on the comment (as entered when posting), so sorting by them needs no `JOIN Users`. `Users` remains the source of "who is this" (unique e-mail).
 - **Reply counter.** The root's `ReplyCount` grows by an atomic `UPDATE … SET ReplyCount = ReplyCount + 1` in the same transaction instead of a `COUNT` per row.
 - **A thread from one index.** Every reply has a `RootId`; a thread is a range of `(RootId, Id)` with keyset paging by 200. Identity order guarantees parents come before children, and the client builds the tree in one pass.
-- **Redis.** Pages and threads are cached under a region version; a write `INCR`s the version only after the commit, so stale data can never sit under the live version. A new thread invalidates the list; a reply invalidates only its thread, and list pages expire after 30 seconds, so reply counts in the list may lag by that much while open pages get them live. (Flushing the list on every reply would make its cache live for a second or two at the reading-B write rate.) Concurrent misses for one key in a process run one database query (single flight). If Redis is down or slow — including timeouts, which StackExchange.Redis reports as `RedisTimeoutException`, a `TimeoutException` — reads go straight to SQL; a test pauses the Redis container to check this.
+- **Redis.** Pages and threads are cached under a region version; a write `INCR`s the version only after the commit, so stale data can never sit under the live version. A new thread invalidates the list; a reply invalidates only its thread, and list pages expire after 30 seconds, so reply counts in the list may lag by that much while open pages get them live. (Flushing the list on every reply would make its cache live for a second or two at the write-heavy rate.) Concurrent misses for one key in a process run one database query (single flight). If Redis is down or slow — including timeouts, which StackExchange.Redis reports as `RedisTimeoutException`, a `TimeoutException` — reads go straight to SQL; a test pauses the Redis container to check this.
 - **Thread count without `COUNT(*)`.** The total for the pager is a Redis counter: loaded once with `COUNT`, incremented by each new thread, reloaded every 10 minutes. A cached `COUNT` was recomputed after every new thread and was the largest SQL cost under load (see the results).
 - **Search in Elasticsearch.** `LIKE '%word%'` on a million rows is a full scan; an ES index with English and Russian analyzers finds word forms and highlights matches (HTML-escaped by ES).
 
-### Writes (≈3% of requests in reading A)
+### Writes (≈3% of requests in normal traffic)
 
 - **Only what the author needs is synchronous**: check, store, answer. Nothing after the commit can fail the request: if the cache invalidation fails, the comment and its file stay, and the pages expire on their own.
 - **Transactional outbox instead of a dual write.** The event is written to `OutboxMessages` in the same transaction as the comment, so there is never "a comment without its event" or the reverse. The worker claims batches with `UPDLOCK, READPAST` (several workers share the work without duplicates), publishes with publisher confirms and marks a row only after the confirm. Delivery is at-least-once and consumers are idempotent and order-independent (the ES document is keyed by comment id, the UI ignores a repeated event).
@@ -91,7 +91,7 @@ The k6 `peak` profile has headroom over the spike: 120 rps of list reads, 50 rps
 ### If the load grows ×10–×100
 
 - SQL Server read replicas (Always On / Azure SQL geo-replica) for pages and threads.
-- Keyset paging instead of page numbers for deep pages: `OFFSET` grows linearly with the page number (see the measurements), and the task asks for page numbers.
+- Keyset paging instead of page numbers for deep pages: `OFFSET` grows linearly with the page number (see the measurements), and the UI uses page numbers.
 - Azure SignalR Service instead of our own WebSocket connections, a Redis cluster, a 3-node ES cluster, a CDN for `/files` and static files.
 - Bulk indexing (hundreds of events per request) instead of one by one, partitioning `Comments` by date, a Redis counter for very hot threads instead of updating the root row on every reply.
 
@@ -114,7 +114,7 @@ What the numbers do not include: k6 calls the API directly, without Caddy and TL
 | Profile | Load | Errors | p95 list | p95 thread | p95 search | p95 post | Live: write → client, p95 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `peak` | 171 rps, 500 WebSockets, 810 posts | 0% | 34 ms | 4 ms | 65 ms | 20 ms | 309 ms (404,501 events) |
-| `write` (reading B) | 194 rps incl. 60 posts/s, 300 WebSockets, 12,149 posts | 0% | 51 ms | 21 ms | 103 ms | 45 ms | 722 ms (3.64M events) |
+| `write` (write-heavy) | 194 rps incl. 60 posts/s, 300 WebSockets, 12,149 posts | 0% | 51 ms | 21 ms | 103 ms | 45 ms | 722 ms (3.64M events) |
 | `stress` (×3 peak) | 510 rps, 1,500 WebSockets, 2,421 posts | 0% | 109 ms | 64 ms | 141 ms | 94 ms | 419 ms (3.63M events) |
 
 Every live event reached every connected reader (events received = posts × readers). The reports are in [`docs/loadtest`](loadtest).

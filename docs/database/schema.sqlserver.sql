@@ -182,3 +182,133 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261109174339_IncludeFilterColumnsInFilteredIndexes'
+)
+BEGIN
+    DROP INDEX [IX_OutboxMessages_Pending] ON [OutboxMessages];
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261109174339_IncludeFilterColumnsInFilteredIndexes'
+)
+BEGIN
+    DROP INDEX [IX_Comments_TopLevel_CreatedAt] ON [Comments];
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261109174339_IncludeFilterColumnsInFilteredIndexes'
+)
+BEGIN
+    DROP INDEX [IX_Comments_TopLevel_Email] ON [Comments];
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261109174339_IncludeFilterColumnsInFilteredIndexes'
+)
+BEGIN
+    DROP INDEX [IX_Comments_TopLevel_UserName] ON [Comments];
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261109174339_IncludeFilterColumnsInFilteredIndexes'
+)
+BEGIN
+    EXEC(N'CREATE INDEX [IX_OutboxMessages_Pending] ON [OutboxMessages] ([Id]) INCLUDE ([ProcessedAt]) WHERE [ProcessedAt] IS NULL');
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261109174339_IncludeFilterColumnsInFilteredIndexes'
+)
+BEGIN
+    EXEC(N'CREATE INDEX [IX_Comments_TopLevel_CreatedAt] ON [Comments] ([CreatedAt], [Id]) INCLUDE ([ParentId]) WHERE [ParentId] IS NULL');
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261109174339_IncludeFilterColumnsInFilteredIndexes'
+)
+BEGIN
+    EXEC(N'CREATE INDEX [IX_Comments_TopLevel_Email] ON [Comments] ([Email], [Id]) INCLUDE ([ParentId]) WHERE [ParentId] IS NULL');
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261109174339_IncludeFilterColumnsInFilteredIndexes'
+)
+BEGIN
+    EXEC(N'CREATE INDEX [IX_Comments_TopLevel_UserName] ON [Comments] ([UserName], [Id]) INCLUDE ([ParentId]) WHERE [ParentId] IS NULL');
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261109174339_IncludeFilterColumnsInFilteredIndexes'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20261109174339_IncludeFilterColumnsInFilteredIndexes', N'10.0.14');
+END;
+
+COMMIT;
+GO
+
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261109214845_OutboxRetriesAndCleanup'
+)
+BEGIN
+    DROP INDEX [IX_OutboxMessages_Pending] ON [OutboxMessages];
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261109214845_OutboxRetriesAndCleanup'
+)
+BEGIN
+    ALTER TABLE [OutboxMessages] ADD [NextAttemptAt] datetimeoffset(3) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261109214845_OutboxRetriesAndCleanup'
+)
+BEGIN
+    ALTER TABLE [OutboxMessages] ADD [ParkedAt] datetimeoffset(3) NULL;
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261109214845_OutboxRetriesAndCleanup'
+)
+BEGIN
+    EXEC(N'CREATE INDEX [IX_OutboxMessages_Pending] ON [OutboxMessages] ([Id]) INCLUDE ([ProcessedAt], [ParkedAt], [NextAttemptAt]) WHERE [ProcessedAt] IS NULL AND [ParkedAt] IS NULL');
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261109214845_OutboxRetriesAndCleanup'
+)
+BEGIN
+    EXEC(N'CREATE INDEX [IX_OutboxMessages_Processed] ON [OutboxMessages] ([ProcessedAt]) WHERE [ProcessedAt] IS NOT NULL');
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261109214845_OutboxRetriesAndCleanup'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20261109214845_OutboxRetriesAndCleanup', N'10.0.14');
+END;
+
+COMMIT;
+GO
+

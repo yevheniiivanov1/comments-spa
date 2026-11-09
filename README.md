@@ -1,22 +1,22 @@
 # Comments — a single-page comments app
 
-Test task "SPA application: Comments" (Middle+ level). Users post comments and reply to them at any depth, attach images and text files, see new comments without reloading the page and search the full text.
+A comments app built as a single-page application. Users post comments and reply to them at any depth, attach images and text files, see new comments without reloading the page and search the full text. It is designed for a million stored comments and 100,000 users a day, and load-tested at that size.
 
 ![The list of threads and an open thread with replies](docs/screenshot.jpg)
 
 **Stack:** .NET 10 (ASP.NET Core, EF Core 10, SignalR, Hot Chocolate GraphQL), SQL Server 2022, Redis, RabbitMQ, Elasticsearch, Azure Blob Storage (Azurite locally), Angular 22, Docker, .NET Aspire, k6.
 
-**Live stand:** _link added after deployment_ · **Video:** _link added after recording_
+**Live demo:** _not deployed yet_ · **Demo video:** _coming soon_
 
 ## Contents
 
 - [Run it](#run-it)
-- [Features](#features) — the task's requirements and where they are implemented
+- [Features](#features) — what it does and where it is implemented
 - [Architecture](#architecture)
 - [Database](#database)
 - [API](#api)
 - [Security](#security)
-- [Load (Middle+)](#load-middle)
+- [Load](#load)
 - [Tests](#tests)
 - [Git branches](#git-branches)
 - [Deploying to Azure](#deploying-to-azure)
@@ -62,9 +62,9 @@ The AppHost starts the same dependencies in containers, the API, the worker and 
 
 ## Features
 
-| Requirement | How it is done | Where |
+| Feature | How it works | Where |
 | --- | --- | --- |
-| Form: User Name (Latin letters and digits), E-mail, Home page (URL), CAPTCHA, Text | Checked in the browser while typing and on the server by the same rules; server errors appear under their field | [`comment-form.ts`](src/Comments.Web/src/app/comments/comment-form.ts), [`Users/*`](src/Comments.Domain/Users) |
+| Comment form: User Name (Latin letters and digits), E-mail, Home page (URL), CAPTCHA, Text | Checked in the browser while typing and on the server by the same rules; server errors appear under their field | [`comment-form.ts`](src/Comments.Web/src/app/comments/comment-form.ts), [`Users/*`](src/Comments.Domain/Users) |
 | CAPTCHA (picture, Latin letters and digits) | Drawn on the server (SkiaSharp: rotated letters, noise); the answer lives in Redis for 5 minutes and is removed by the first check (`GETDEL`); case-insensitive | [`CaptchaService.cs`](src/Comments.Infrastructure/Captcha/CaptchaService.cs) |
 | Only `<a href title>`, `<code>`, `<i>`, `<strong>`; closing tags checked; valid XHTML | Parsed with regular expressions and a stack of open tags; text and attributes are re-encoded and tags rebuilt, so nothing but the allowed markup reaches the output. All errors at once, in plain words (`Tag <i> is not closed.`) | [`CommentMarkup.cs`](src/Comments.Domain/Markup/CommentMarkup.cs), [tests](tests/Comments.Domain.Tests/CommentMarkupTests.cs) |
 | Toolbar `[i] [strong] [code] [a]` | Wraps the selection; Ctrl+I, Ctrl+B, Ctrl+K | `comment-form.html` |
@@ -76,11 +76,11 @@ The AppHost starts the same dependencies in containers, the API, the worker and 
 | TXT up to 100 KB | Size and "is it text" checks; the encoding is detected (UTF-8 or Windows-1251) and named in `Content-Type` | same |
 | Viewing files with visual effects | Own lightbox: dimmed backdrop, zoom, arrow keys through every attachment on screen; text files open in it too | [`lightbox.ts`](src/Comments.Web/src/app/shared/lightbox.ts) |
 | Protection against XSS and SQL injection | See [Security](#security) | — |
-| Data about the user | `Users` table (by e-mail) plus IP and User-Agent on every comment | [Database](#database) |
-| Simple CSS design, visual effects | Cards as in the mock-up, animations for new comments, opening threads, the dialog and errors; responsive down to 360 px | `*.scss` |
-| **Junior+:** queue, cache, events, WebSocket | Domain event → outbox → RabbitMQ; pages and threads cached in Redis; new comments arrive over WebSocket (SignalR) — the "Live" indicator in the header | [Architecture](#architecture) |
-| **Middle:** GraphQL, broker, NoSQL, cloud | Hot Chocolate (`/graphql`, the UI's search uses it); RabbitMQ (quorum queue, delayed retries, dead letters with a replay command); Elasticsearch (full-text search with English and Russian stemming) and Redis; Azure (VM + Blob Storage) | [`CommentsQuery.cs`](src/Comments.Api/GraphQL/CommentsQuery.cs), [`deploy/azure`](deploy/azure) |
-| **Middle+:** architecture for 1M messages and 100k users a day, load test | Capacity estimate, decisions and k6 results on 1M rows | [docs/architecture.md](docs/architecture.md) |
+| Who posted | `Users` table (by e-mail) plus IP and User-Agent on every comment | [Database](#database) |
+| Plain CSS design with motion | Comment cards, animations for new comments, opening threads, the dialog and errors; responsive down to 360 px | `*.scss` |
+| Background work and live updates | Domain event → outbox → RabbitMQ; pages and threads cached in Redis; new comments arrive over WebSocket (SignalR) — the "Live" indicator in the header | [Architecture](#architecture) |
+| GraphQL, search, cloud | Hot Chocolate (`/graphql`, the UI's search uses it); RabbitMQ (quorum queue, delayed retries, dead letters with a replay command); Elasticsearch (full-text search with English and Russian stemming); Azure (VM + Blob Storage) | [`CommentsQuery.cs`](src/Comments.Api/GraphQL/CommentsQuery.cs), [`deploy/azure`](deploy/azure) |
+| Capacity | Load estimate for 1M comments and 100k users a day, design decisions and k6 results on 1M rows | [docs/architecture.md](docs/architecture.md) |
 
 Also: search across all comments with highlighted matches and a jump to the thread, drag-and-drop upload, upload progress, remembered name and e-mail, rate limits, health checks, OpenTelemetry.
 
@@ -124,10 +124,52 @@ erDiagram
     Comments ||--o{ Comments : "ParentId (reply to)"
     Comments ||--o{ Comments : "RootId (thread)"
     Comments ||--o| Attachments : has
-    Users { int Id PK; varchar UserName; varchar Email UK; nvarchar HomePage; datetimeoffset CreatedAt; datetimeoffset LastSeenAt }
-    Comments { bigint Id PK; bigint ParentId FK; bigint RootId FK; int Depth; int UserId FK; varchar UserName; varchar Email; nvarchar HomePage; nvarchar Html; datetimeoffset CreatedAt; int ReplyCount; varchar IpAddress; nvarchar UserAgent }
-    Attachments { uniqueidentifier Id PK; bigint CommentId FK; varchar Type; nvarchar FileName; varchar StorageKey UK; varchar ContentType; bigint SizeBytes; int Width; int Height; bit WasResized }
-    OutboxMessages { bigint Id PK; varchar Type; nvarchar Payload; datetimeoffset OccurredAt; datetimeoffset ProcessedAt; int Attempts; nvarchar LastError }
+    Users {
+        int Id PK
+        varchar UserName
+        varchar Email UK
+        nvarchar HomePage
+        datetimeoffset CreatedAt
+        datetimeoffset LastSeenAt
+    }
+    Comments {
+        bigint Id PK
+        bigint ParentId FK
+        bigint RootId FK
+        int Depth
+        int UserId FK
+        varchar UserName
+        varchar Email
+        nvarchar HomePage
+        nvarchar Html
+        datetimeoffset CreatedAt
+        int ReplyCount
+        varchar IpAddress
+        nvarchar UserAgent
+    }
+    Attachments {
+        uniqueidentifier Id PK
+        bigint CommentId FK
+        varchar Type
+        nvarchar FileName
+        varchar StorageKey UK
+        varchar ContentType
+        bigint SizeBytes
+        int Width
+        int Height
+        bit WasResized
+    }
+    OutboxMessages {
+        bigint Id PK
+        varchar Type
+        nvarchar Payload
+        datetimeoffset OccurredAt
+        datetimeoffset ProcessedAt
+        int Attempts
+        nvarchar LastError
+        datetimeoffset NextAttemptAt
+        datetimeoffset ParkedAt
+    }
 ```
 
 Why:
@@ -169,14 +211,14 @@ query {
 - **Files.** The type is detected from the content; JPG and PNG are always re-encoded (polyglots and metadata do not survive re-encoding). The one exception is a GIF that already fits 320×240: it is stored as uploaded to keep its animation, after being decoded successfully. The server generates the stored names; every file is served with `X-Content-Type-Options: nosniff` and its decoded type, and text files with `Content-Security-Policy: sandbox`.
 - **Abuse.** Single-use CAPTCHA; per-IP rate limits on posting, CAPTCHA, preview, search and `/graphql`; a GraphQL cost budget (one request holds at most a few searches, whatever aliases it uses) and depth limit; request size limits (6 MB for posting, 64 KB for preview); an image pixel limit.
 - **Client IP.** `X-Forwarded-For` is trusted only in the Azure setup, where Caddy is the only way in and overwrites the header. Locally the API is published directly, so the header is ignored and cannot be used to dodge rate limits or fake the stored IP.
-- **Privacy.** E-mail addresses are public: the task asks for a table sortable by e-mail, so they are shown and returned by the API. Posting under someone else's e-mail is possible (there is no confirmation) and updates the name and home page stored in `Users` for that address; each comment keeps what was entered with it. Confirming addresses would be the next step for a real product.
+- **Privacy.** E-mail addresses are public: the list is sortable by e-mail, so they are shown and returned by the API. Posting under someone else's e-mail is possible (there is no confirmation) and updates the name and home page stored in `Users` for that address; each comment keeps what was entered with it. Confirming addresses would be the next step for a real product.
 - **CSRF** does not apply: no cookies or sessions, and the CAPTCHA protects posting.
 
-## Load (Middle+)
+## Load
 
 The estimate, decisions and measurements: **[docs/architecture.md](docs/architecture.md#load-test)**.
 
-The condition reads two ways: a million comments stored with 100k users a day (~50 rps in the busiest hour, ~150 rps in spikes, about 30 reads per write), or a million new comments a day (~60 posts a second at peak). On 1,000,000 comments (generator [`tools/Comments.Seed`](tools/Comments.Seed)) the k6 scenario [`loadtest/k6/comments.js`](loadtest/k6/comments.js) covers both, on one machine with one API instance:
+The target is a million comments and 100,000 users a day: ~50 rps in the busiest hour, ~150 rps in spikes, about 30 reads per write. A heavier write case, a million *new* comments a day, means ~60 posts a second at peak. On 1,000,000 comments (generator [`tools/Comments.Seed`](tools/Comments.Seed)) the k6 scenario [`loadtest/k6/comments.js`](loadtest/k6/comments.js) covers both, on one machine with one API instance:
 
 | Profile | Load | Errors | p95 list / thread / search / post | Live: write → client, p95 |
 | --- | --- | --- | --- | --- |
@@ -208,7 +250,7 @@ CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs all of this and
 ```
 v1.0.0   feature/domain-persistence → feature/comments-api → feature/angular-client → feature/messaging-realtime
          → feature/graphql-search → feature/docker-ci → feature/load-test → feature/azure-docs
-v1.1.0   review follow-up: fix/cache-and-post-resilience, fix/search-indexing-retries, fix/outbox-backoff-cleanup,
+v1.1.0   hardening: fix/cache-and-post-resilience, fix/search-indexing-retries, fix/outbox-backoff-cleanup,
          fix/input-validation, fix/api-hardening, fix/client-ux, perf/list-cache-and-images, test/load-realism, docs/review-follow-up
          (each → develop; develop → main per release)
 ```
@@ -219,10 +261,10 @@ One VM with docker compose (Caddy with automatic HTTPS from Let's Encrypt) plus 
 
 ## Trade-offs
 
-- **Page numbers instead of a cursor.** The task asks for pages, so the list uses `OFFSET` over a narrow index: the cost grows with the page number (the last of 12,000 pages takes 0.13 s cold) but stays acceptable. An endless feed would use keyset paging, as threads already do.
+- **Page numbers instead of a cursor.** The list has numbered pages, so it uses `OFFSET` over a narrow index: the cost grows with the page number (the last of 12,000 pages takes 0.13 s cold) but stays acceptable. An endless feed would use keyset paging, as threads already do.
 - **The reply counter on the root** is a hot row for a very popular thread (every reply updates the same row). Not a problem at these volumes; beyond them, a counter in Redis flushed to the database periodically.
 - **Reply counts in the list may lag by up to 30 seconds.** Replies do not flush the cached list (that would defeat the cache at a high write rate); open pages get the counts live, the thread itself is always fresh.
 - **Rate limits are per instance.** Behind a load balancer with N instances the effective limit is N times higher; the CAPTCHA is the main gate.
 - **Live updates are best effort.** A client that was disconnected sees missed comments after a reload; there is no redelivery to the browser.
 - **Events are delivered at least once and not in order.** The outbox keeps going past a message that fails (it backs off and is parked after 20 attempts), so consumers must be idempotent and order-independent — both are.
-- **The CAPTCHA** is home-grown, which suits a test task; production would use reCAPTCHA or Turnstile.
+- **The CAPTCHA** is home-grown; a high-traffic public site would use reCAPTCHA or Turnstile.

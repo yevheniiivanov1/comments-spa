@@ -28,7 +28,7 @@ import { Lightbox } from './shared/lightbox';
       <router-outlet />
     </main>
     <footer class="container footer">
-      ASP.NET Core · EF Core · SQL Server · Redis · RabbitMQ · Elasticsearch · Angular — a test task
+      ASP.NET Core · EF Core · SQL Server · Redis · RabbitMQ · Elasticsearch · Angular
     </footer>
     <app-comment-form />
     <app-lightbox />

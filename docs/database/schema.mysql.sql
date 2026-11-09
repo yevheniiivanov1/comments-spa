@@ -78,7 +78,7 @@ CREATE TABLE `Attachments` (
 ) ENGINE = InnoDB COMMENT = 'Images (JPG, GIF, PNG up to 320x240) and text files (TXT up to 100 KB)';
 
 -- Transactional outbox: integration events written in the same transaction as the comment and published to
--- RabbitMQ by the worker; ProcessedAt is set after the broker confirms.
+-- RabbitMQ by the worker; ProcessedAt is set after the broker confirms. Published rows are deleted after 7 days.
 CREATE TABLE `OutboxMessages` (
   `Id`          BIGINT        NOT NULL AUTO_INCREMENT,
   `Type`        VARCHAR(100)  NOT NULL COMMENT 'Routing key, e.g. comment.posted',
@@ -87,7 +87,11 @@ CREATE TABLE `OutboxMessages` (
   `ProcessedAt` DATETIME(3)   NULL     COMMENT 'Set once published',
   `Attempts`    INT           NOT NULL,
   `LastError`   VARCHAR(2000) NULL,
+  `NextAttemptAt` DATETIME(3) NULL     COMMENT 'Not before this time; set after a failed attempt (backoff)',
+  `ParkedAt`    DATETIME(3)   NULL     COMMENT 'Set after the last attempt; released by the worker''s replay command',
   PRIMARY KEY (`Id`),
-  -- SQL Server: filtered WHERE ProcessedAt IS NULL, so the index holds only pending messages.
-  INDEX `IX_OutboxMessages_Pending` (`ProcessedAt`, `Id`)
+  -- SQL Server: filtered WHERE ProcessedAt IS NULL AND ParkedAt IS NULL, so the index holds only messages to publish.
+  INDEX `IX_OutboxMessages_Pending` (`ProcessedAt`, `ParkedAt`, `Id`),
+  -- SQL Server: filtered WHERE ProcessedAt IS NOT NULL; serves deleting published messages after the retention period.
+  INDEX `IX_OutboxMessages_Processed` (`ProcessedAt`)
 ) ENGINE = InnoDB COMMENT = 'Events waiting to be published (transactional outbox)';
