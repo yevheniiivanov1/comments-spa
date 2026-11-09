@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Comments.Infrastructure\Comments.Infrastructure.csproj" />
+    <ProjectReference Include="..\Comments.ServiceDefaults\Comments.ServiceDefaults.csproj" />
+  </ItemGroup>
+
+</Project>

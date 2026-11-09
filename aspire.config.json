@@ -1,0 +1,5 @@
+{
+  "appHost": {
+    "path": "src/Comments.AppHost/Comments.AppHost.csproj"
+  }
+}

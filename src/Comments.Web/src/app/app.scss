@@ -1,0 +1,120 @@
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  border-bottom: 1px solid var(--border);
+  background: rgb(255 255 255 / 0.85);
+  backdrop-filter: saturate(1.4) blur(8px);
+}
+
+.topbar-inner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 56px;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--text);
+  text-decoration: none;
+
+  .logo {
+    font-size: 22px;
+  }
+}
+
+.search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 1 340px;
+  margin-left: auto;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+
+  &:focus-within {
+    border-color: var(--accent);
+    background: #fff;
+    box-shadow: 0 0 0 3px var(--accent-bg);
+  }
+
+  input {
+    flex: 1;
+    min-width: 0;
+    height: 36px;
+    border: 0;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    outline: none;
+  }
+}
+
+.live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #f0a500;
+  }
+
+  &[data-state='live'] {
+    color: #1b8a4b;
+
+    .dot {
+      background: #22b35e;
+      animation: pulse 2s ease-out infinite;
+    }
+  }
+
+  &[data-state='offline'] .dot {
+    background: var(--danger);
+  }
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgb(34 179 94 / 0.6);
+  }
+  100% {
+    box-shadow: 0 0 0 8px rgb(34 179 94 / 0);
+  }
+}
+
+main {
+  padding-top: 24px;
+  padding-bottom: 32px;
+}
+
+@media (max-width: 600px) {
+  .brand span:last-child,
+  .live-label {
+    display: none;
+  }
+}
+
+.footer {
+  padding-bottom: 24px;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+}

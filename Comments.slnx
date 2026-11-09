@@ -1,4 +1,18 @@
 <Solution>
-  <Folder Name="/src/" />
-  <Folder Name="/tests/" />
+  <Folder Name="/src/">
+    <Project Path="src/Comments.Api/Comments.Api.csproj" />
+    <Project Path="src/Comments.AppHost/Comments.AppHost.csproj" />
+    <Project Path="src/Comments.Application/Comments.Application.csproj" />
+    <Project Path="src/Comments.Domain/Comments.Domain.csproj" />
+    <Project Path="src/Comments.Infrastructure/Comments.Infrastructure.csproj" />
+    <Project Path="src/Comments.ServiceDefaults/Comments.ServiceDefaults.csproj" />
+    <Project Path="src/Comments.Worker/Comments.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Comments.Seed/Comments.Seed.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Comments.Api.Tests/Comments.Api.Tests.csproj" />
+    <Project Path="tests/Comments.Domain.Tests/Comments.Domain.Tests.csproj" />
+  </Folder>
 </Solution>
