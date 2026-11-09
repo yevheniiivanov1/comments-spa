@@ -21,6 +21,12 @@ var seeder = new Seeder(options);
 var (users, comments) = await seeder.RunAsync();
 Console.WriteLine($"Inserted {users:N0} users and {comments:N0} comments in {watch.Elapsed:mm\\:ss}.");
 
+if (options.PopularThreadsFile is { } file)
+{
+    await File.WriteAllTextAsync(file, System.Text.Json.JsonSerializer.Serialize(seeder.PopularThreadIds));
+    Console.WriteLine($"Popular thread ids written to {file}.");
+}
+
 if (options.RedisConnectionString is { } redis)
 {
     await using var connection = await ConnectionMultiplexer.ConnectAsync(redis);

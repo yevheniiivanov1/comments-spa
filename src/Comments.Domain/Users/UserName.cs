@@ -31,6 +31,6 @@ public sealed partial record UserName
 
     public override string ToString() => Value;
 
-    [GeneratedRegex("^[A-Za-z0-9]+$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^[A-Za-z0-9]+\z", RegexOptions.CultureInvariant)]
     private static partial Regex AllowedCharacters();
 }

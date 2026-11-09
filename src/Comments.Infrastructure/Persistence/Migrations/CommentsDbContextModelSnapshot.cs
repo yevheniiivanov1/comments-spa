@@ -228,7 +228,15 @@ namespace Comments.Infrastructure.Persistence.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
 
+                    b.Property<DateTimeOffset?>("NextAttemptAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)");
+
                     b.Property<DateTimeOffset>("OccurredAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)");
+
+                    b.Property<DateTimeOffset?>("ParkedAt")
                         .HasPrecision(3)
                         .HasColumnType("datetimeoffset(3)");
 
@@ -250,9 +258,13 @@ namespace Comments.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("Id")
                         .HasDatabaseName("IX_OutboxMessages_Pending")
-                        .HasFilter("[ProcessedAt] IS NULL");
+                        .HasFilter("[ProcessedAt] IS NULL AND [ParkedAt] IS NULL");
 
-                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("Id"), new[] { "ProcessedAt" });
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("Id"), new[] { "ProcessedAt", "ParkedAt", "NextAttemptAt" });
+
+                    b.HasIndex("ProcessedAt")
+                        .HasDatabaseName("IX_OutboxMessages_Processed")
+                        .HasFilter("[ProcessedAt] IS NOT NULL");
 
                     b.ToTable("OutboxMessages", (string)null);
                 });

@@ -12,7 +12,7 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Subscription, debounceTime, filter, switchMap } from 'rxjs';
+import { Observable, Subscription, catchError, debounceTime, filter, of, switchMap } from 'rxjs';
 import { CommentsApi } from '../core/comments-api';
 import { MAX_TEXT_LENGTH } from '../core/markup';
 import { Captcha, CommentDto, PreviewResult, ValidationProblem } from '../core/models';
@@ -96,7 +96,7 @@ export class CommentForm {
         takeUntilDestroyed(),
         debounceTime(350),
         filter(() => this.previewOpen()),
-        switchMap((text) => this.api.preview(text)),
+        switchMap((text) => this.renderPreview(text)),
       )
       .subscribe((result) => this.preview.set(result));
 
@@ -164,8 +164,17 @@ export class CommentForm {
     this.previewOpen.update((open) => !open);
     if (this.previewOpen()) {
       this.preview.set(null);
-      this.api.preview(this.form.controls.text.value).subscribe((result) => this.preview.set(result));
+      this.renderPreview(this.form.controls.text.value).subscribe((result) => this.preview.set(result));
     }
+  }
+
+  /** A failed request becomes a message in the preview, so the live preview keeps working after it. */
+  private renderPreview(text: string): Observable<PreviewResult> {
+    return this.api.preview(text).pipe(
+      catchError((error: HttpErrorResponse) =>
+        of<PreviewResult>({ html: null, errors: [`Preview is unavailable: ${this.describe(error)}`] }),
+      ),
+    );
   }
 
   protected onFileSelected(event: Event): void {

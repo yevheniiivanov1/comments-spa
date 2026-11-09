@@ -12,12 +12,18 @@ namespace Comments.Infrastructure.Files;
 /// (EXIF rotation applied) and re-encoded; JPG and PNG are always re-encoded, which also drops metadata such as GPS tags.
 /// Skia has no GIF encoder, so a GIF that fits is kept as uploaded (animation survives) and a larger one becomes a PNG of its first frame.
 /// </para>
+/// <para>
+/// Memory: large JPEGs are decoded directly at a reduced size, at most 24 MP are accepted, and only a few images are decoded
+/// at a time, so a burst of big uploads cannot exhaust the API's memory.
+/// </para>
 /// <para>Text: a .txt file up to 100 KB without NUL bytes, stored as is; the encoding is UTF-8 if the bytes are valid UTF-8, otherwise Windows-1251.</para>
 /// </summary>
 internal sealed class AttachmentProcessor : IAttachmentProcessor
 {
     public const long MaxImageUploadBytes = 5 * 1024 * 1024;
-    private const long MaxSourcePixels = 40_000_000;
+    private const long MaxSourcePixels = 24_000_000;
+
+    private static readonly SemaphoreSlim DecodeSlots = new(Math.Max(2, Environment.ProcessorCount / 2));
     private const int JpegQuality = 90;
 
     public const string UnsupportedTypeError = "Only JPG, GIF and PNG images or TXT files can be attached.";
@@ -55,8 +61,9 @@ internal sealed class AttachmentProcessor : IAttachmentProcessor
         }
 
         var origin = codec.EncodedOrigin;
-        var swaps = origin is SKEncodedOrigin.LeftTop or SKEncodedOrigin.RightTop or SKEncodedOrigin.RightBottom or SKEncodedOrigin.LeftBottom;
-        var (width, height) = swaps ? (info.Height, info.Width) : (info.Width, info.Height);
+        var (width, height) = origin is SKEncodedOrigin.LeftTop or SKEncodedOrigin.RightTop or SKEncodedOrigin.RightBottom or SKEncodedOrigin.LeftBottom
+            ? (info.Height, info.Width)
+            : (info.Width, info.Height);
         var fits = width <= ImageAttachment.MaxWidth && height <= ImageAttachment.MaxHeight;
 
         if (codec.EncodedFormat == SKEncodedImageFormat.Gif && fits)
@@ -65,33 +72,88 @@ internal sealed class AttachmentProcessor : IAttachmentProcessor
                 AttachmentKind.Image, upload.FileName, "image/gif", ".gif", bytes, width, height));
         }
 
-        using var decoded = SKBitmap.Decode(codec);
+        // Decoding is the memory-hungry part (4 bytes per pixel), so only a few uploads decode at once.
+        await DecodeSlots.WaitAsync(cancellationToken);
+        try
+        {
+            return Scale(codec, origin, width, height, upload.FileName);
+        }
+        finally
+        {
+            DecodeSlots.Release();
+        }
+    }
+
+    private static AttachmentProcessingResult Scale(SKCodec codec, SKEncodedOrigin origin, int width, int height, string fileName)
+    {
+        var scale = Math.Min(1d, Math.Min((double)ImageAttachment.MaxWidth / width, (double)ImageAttachment.MaxHeight / height));
+        var targetWidth = Math.Clamp((int)Math.Round(width * scale), 1, ImageAttachment.MaxWidth);
+        var targetHeight = Math.Clamp((int)Math.Round(height * scale), 1, ImageAttachment.MaxHeight);
+
+        using var decoded = DecodeAtLeast(codec, scale);
         if (decoded is null)
         {
             return AttachmentProcessingResult.Fail("The file is not a valid JPG, GIF or PNG image.");
         }
 
-        using var oriented = Orient(decoded, origin, width, height);
-        var scale = Math.Min(1d, Math.Min((double)ImageAttachment.MaxWidth / width, (double)ImageAttachment.MaxHeight / height));
-        var targetWidth = Math.Clamp((int)Math.Round(width * scale), 1, ImageAttachment.MaxWidth);
-        var targetHeight = Math.Clamp((int)Math.Round(height * scale), 1, ImageAttachment.MaxHeight);
-
-        using var resized = scale < 1
-            ? oriented.Resize(new SKImageInfo(targetWidth, targetHeight, oriented.ColorType, oriented.AlphaType), new SKSamplingOptions(SKCubicResampler.Mitchell))
-            : oriented.Copy();
-
-        var (format, contentType, extension) = codec.EncodedFormat == SKEncodedImageFormat.Jpeg
-            ? (SKEncodedImageFormat.Jpeg, "image/jpeg", ".jpg")
-            : (SKEncodedImageFormat.Png, "image/png", ".png");
-
-        using var output = new MemoryStream();
-        if (!resized.Encode(output, format, JpegQuality))
+        var swaps = origin is SKEncodedOrigin.LeftTop or SKEncodedOrigin.RightTop or SKEncodedOrigin.RightBottom or SKEncodedOrigin.LeftBottom;
+        var oriented = origin == SKEncodedOrigin.TopLeft
+            ? decoded
+            : Orient(decoded, origin, swaps ? decoded.Height : decoded.Width, swaps ? decoded.Width : decoded.Height);
+        SKBitmap? resized = null;
+        try
         {
-            return AttachmentProcessingResult.Fail("The image could not be processed.");
+            if (oriented.Width != targetWidth || oriented.Height != targetHeight)
+            {
+                resized = oriented.Resize(
+                    new SKImageInfo(targetWidth, targetHeight, oriented.ColorType, oriented.AlphaType),
+                    new SKSamplingOptions(SKCubicResampler.Mitchell));
+            }
+
+            var (format, contentType, extension) = codec.EncodedFormat == SKEncodedImageFormat.Jpeg
+                ? (SKEncodedImageFormat.Jpeg, "image/jpeg", ".jpg")
+                : (SKEncodedImageFormat.Png, "image/png", ".png");
+
+            using var output = new MemoryStream();
+            if (!(resized ?? oriented).Encode(output, format, JpegQuality))
+            {
+                return AttachmentProcessingResult.Fail("The image could not be processed.");
+            }
+
+            return AttachmentProcessingResult.Ok(new ProcessedFile(
+                AttachmentKind.Image, fileName, contentType, extension, output.ToArray(), targetWidth, targetHeight, WasResized: scale < 1));
+        }
+        finally
+        {
+            resized?.Dispose();
+            if (!ReferenceEquals(oriented, decoded))
+            {
+                oriented.Dispose();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Decodes at the smallest size the codec can produce directly that still leaves twice the target resolution for the
+    /// final resample (JPEG decodes at 1/2, 1/4 or 1/8). A 24 MP photo then takes a few MB instead of ~100 MB.
+    /// </summary>
+    private static SKBitmap? DecodeAtLeast(SKCodec codec, double scale)
+    {
+        var full = codec.Info;
+        if (scale < 0.5)
+        {
+            var size = codec.GetScaledDimensions((float)(scale * 2));
+            if (size.Width < full.Width && size.Width >= full.Width * scale && size.Height >= full.Height * scale)
+            {
+                var scaled = SKBitmap.Decode(codec, full.WithSize(size.Width, size.Height));
+                if (scaled is not null)
+                {
+                    return scaled;
+                }
+            }
         }
 
-        return AttachmentProcessingResult.Ok(new ProcessedFile(
-            AttachmentKind.Image, upload.FileName, contentType, extension, output.ToArray(), targetWidth, targetHeight, WasResized: scale < 1));
+        return SKBitmap.Decode(codec);
     }
 
     private static async Task<AttachmentProcessingResult> ProcessTextAsync(FileUpload upload, CancellationToken cancellationToken)
@@ -138,11 +200,6 @@ internal sealed class AttachmentProcessor : IAttachmentProcessor
 
     private static SKBitmap Orient(SKBitmap source, SKEncodedOrigin origin, int width, int height)
     {
-        if (origin == SKEncodedOrigin.TopLeft)
-        {
-            return source.Copy();
-        }
-
         var result = new SKBitmap(new SKImageInfo(width, height, source.ColorType, source.AlphaType));
         using var canvas = new SKCanvas(result);
         switch (origin)

@@ -70,6 +70,13 @@ export class CommentsPage {
     return query.sort !== sort ? 'none' : query.direction === 'asc' ? 'ascending' : 'descending';
   }
 
+  /** Clicking the text opens the thread, except when the click is on a link inside the comment. */
+  protected onTextClick(event: MouseEvent, comment: CommentDto): void {
+    if (!(event.target as Element | null)?.closest('a')) {
+      this.store.toggleThread(comment);
+    }
+  }
+
   protected openAttachment(attachment: AttachmentDto, owner: CommentDto): void {
     this.lightbox.open(this.visibleAttachments(), toLightboxItem(attachment, owner.userName));
   }

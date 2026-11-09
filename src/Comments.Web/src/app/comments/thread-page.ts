@@ -12,6 +12,9 @@ import { CommentsStore } from './comments-store';
 import { Composer } from './composer';
 import { buildThreadTree } from './thread-tree';
 
+/** How far the page loads a long thread to reach a linked reply (25 pages of 200). */
+const MAX_REPLIES_TO_REACH = 5_000;
+
 /** One thread on its own page (linked from search results), with the target comment highlighted. */
 @Component({
   selector: 'app-thread-page',
@@ -91,12 +94,20 @@ export class ThreadPage {
     let highlighted = 0;
     effect(() => {
       const target = Number(this.c());
-      const loaded = this.store.threads().get(Number(this.id()));
-      if (target && target !== highlighted && this.root.value() && loaded && !loaded.loading) {
-        highlighted = target;
-        this.store.highlight(target);
-        setTimeout(() => document.getElementById(`comment-${target}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+      const id = Number(this.id());
+      const loaded = this.store.threads().get(id);
+      if (!target || target === highlighted || !this.root.value() || !loaded || loaded.loading) {
+        return;
       }
+      // The linked reply may be beyond the first page of a long thread: keep loading until it is there.
+      const present = target === id || loaded.items.some((c) => c.id === target);
+      if (!present && loaded.nextAfter !== null && loaded.items.length < MAX_REPLIES_TO_REACH) {
+        this.store.loadThread(id, loaded.nextAfter);
+        return;
+      }
+      highlighted = target;
+      this.store.highlight(target);
+      setTimeout(() => document.getElementById(`comment-${target}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
     });
 
     this.composer.posted.pipe(takeUntilDestroyed()).subscribe((comment) => this.store.addOwn(comment));

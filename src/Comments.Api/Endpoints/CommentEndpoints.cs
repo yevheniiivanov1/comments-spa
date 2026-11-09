@@ -30,6 +30,7 @@ internal static class CommentEndpoints
 
         group.MapPost("/preview", Preview)
             .RequireRateLimiting(RateLimiting.PreviewPolicy)
+            .WithMetadata(new RequestSizeLimitAttribute(UploadLimits.MaxPreviewRequestBytes))
             .WithSummary("Validates the text and returns the XHTML that would be published.");
 
         return app;

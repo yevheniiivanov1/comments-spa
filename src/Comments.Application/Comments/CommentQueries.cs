@@ -18,6 +18,12 @@ public sealed class CommentQueries(ICommentsDbContext db, ICommentCache cache)
     public const int ThreadPageSize = 200;
     public const int MaxPage = 100_000;
 
+    /// <summary>
+    /// The number of threads, kept as a counter instead of a cached COUNT: a COUNT over ~300k index entries costs ~75 ms of
+    /// CPU, and with a cached value it ran again after every new thread — the top SQL cost in the write-heavy load test.
+    /// </summary>
+    public const string TopLevelCounter = "top-level";
+
     public Task<CommentPage> GetPageAsync(int page, CommentSort sort, SortDirection direction, CancellationToken cancellationToken)
     {
         page = Math.Clamp(page, 1, MaxPage);
@@ -41,10 +47,9 @@ public sealed class CommentQueries(ICommentsDbContext db, ICommentCache cache)
 
     private async Task<CommentPage> LoadPageAsync(int page, CommentSort sort, SortDirection direction, CancellationToken cancellationToken)
     {
-        var total = await cache.GetOrCreateAsync(
-            CacheRegion.TopLevel,
-            "count",
-            ct => db.Comments.CountAsync(c => c.ParentId == null, ct),
+        var total = (int)await cache.GetCounterAsync(
+            TopLevelCounter,
+            ct => db.Comments.LongCountAsync(c => c.ParentId == null, ct),
             cancellationToken);
 
         var ids = await Sort(db.Comments.Where(c => c.ParentId == null), sort, direction)

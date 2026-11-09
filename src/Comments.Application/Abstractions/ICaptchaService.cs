@@ -10,3 +10,10 @@ public interface ICaptchaService
 
 /// <summary>A CAPTCHA picture as PNG. <see cref="Answer"/> is set only when the test-answer option is on (load tests).</summary>
 public sealed record CaptchaChallenge(string Id, byte[] Png, string? Answer);
+
+/// <summary>The CAPTCHA store cannot be reached, so an answer can be neither issued nor checked.</summary>
+public sealed class CaptchaUnavailableException(Exception innerException)
+    : Exception("The CAPTCHA store is unavailable.", innerException)
+{
+    public const string UserMessage = "The CAPTCHA check is temporarily unavailable. Please try again in a minute.";
+}

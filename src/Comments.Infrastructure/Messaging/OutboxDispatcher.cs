@@ -16,7 +16,12 @@ namespace Comments.Infrastructure.Messaging;
 /// Each batch is claimed with <c>UPDLOCK, READPAST</c> inside a transaction, so several worker instances split the work
 /// without publishing the same row twice concurrently. A row is marked processed only after the broker confirmed the
 /// message (publisher confirms). If the process dies between the confirm and the commit, the row is published again
-/// on the next run; consumers are idempotent for that reason.
+/// on the next run; consumers are idempotent for that reason, and they do not depend on order.
+/// </para>
+/// <para>
+/// A message the open channel fails to publish is marked failed with backoff and the batch goes on, so one bad message
+/// cannot block the rest. A closed channel means the broker is gone: the batch stops without counting attempts, and the
+/// loop reconnects.
 /// </para>
 /// </summary>
 internal sealed class OutboxDispatcher(
@@ -90,8 +95,13 @@ internal sealed class OutboxDispatcher(
             db.ChangeTracker.Clear();
             await using var transaction = await db.Database.BeginTransactionAsync(ct);
 
+            var now = time.GetUtcNow();
             var batch = await db.OutboxMessages
-                .FromSql($"SELECT TOP ({BatchSize}) * FROM [OutboxMessages] WITH (UPDLOCK, READPAST, ROWLOCK) WHERE [ProcessedAt] IS NULL ORDER BY [Id]")
+                .FromSql($"""
+                    SELECT TOP ({BatchSize}) * FROM [OutboxMessages] WITH (UPDLOCK, READPAST, ROWLOCK)
+                    WHERE [ProcessedAt] IS NULL AND [ParkedAt] IS NULL AND ([NextAttemptAt] IS NULL OR [NextAttemptAt] <= {now})
+                    ORDER BY [Id]
+                    """)
                 .ToListAsync(ct);
 
             var published = 0;
@@ -103,10 +113,21 @@ internal sealed class OutboxDispatcher(
                     message.MarkProcessed(time.GetUtcNow());
                     published++;
                 }
+                catch (Exception ex) when (ex is not OperationCanceledException && channel.IsOpen)
+                {
+                    message.MarkFailed(ex.Message, time.GetUtcNow());
+                    if (message.ParkedAt is not null)
+                    {
+                        logger.LogError(ex, "Outbox message {Id} ({Type}) failed {Attempts} times and was parked", message.Id, message.Type, message.Attempts);
+                    }
+                    else
+                    {
+                        logger.LogWarning(ex, "Could not publish outbox message {Id} ({Type}); next attempt at {NextAttemptAt}", message.Id, message.Type, message.NextAttemptAt);
+                    }
+                }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
-                    message.MarkFailed(ex.Message);
-                    logger.LogWarning(ex, "Could not publish outbox message {Id} ({Type})", message.Id, message.Type);
+                    logger.LogWarning(ex, "The broker channel closed while publishing; reconnecting");
                     break;
                 }
             }

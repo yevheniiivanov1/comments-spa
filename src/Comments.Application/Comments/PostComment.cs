@@ -28,7 +28,8 @@ public sealed record PostCommentResult(CommentDto? Comment, IReadOnlyDictionary<
 /// <para>
 /// Order matters: everything is validated first (the CAPTCHA is consumed on every attempt), then the attachment is stored,
 /// then the comment, the author and the outbox message are written in one transaction, and only after the commit the cached
-/// list and thread are invalidated. If the database write fails, the stored file is deleted again.
+/// list and thread are invalidated. If the database write fails, the stored file is deleted again; nothing after the commit
+/// can fail the request or trigger that compensation, because the comment already exists.
 /// </para>
 /// </summary>
 public sealed class PostCommentHandler(
@@ -50,9 +51,17 @@ public sealed class PostCommentHandler(
         var markup = CommentMarkup.Parse(command.Text);
         errors.Add("text", markup.Errors);
 
-        if (!await captcha.VerifyAsync(command.CaptchaId, command.CaptchaAnswer, cancellationToken))
+        try
         {
-            errors.Add("captcha", "The characters do not match the picture. Please enter the new one.");
+            if (!await captcha.VerifyAsync(command.CaptchaId, command.CaptchaAnswer, cancellationToken))
+            {
+                errors.Add("captcha", "The characters do not match the picture. Please enter the new one.");
+            }
+        }
+        catch (CaptchaUnavailableException ex)
+        {
+            logger.LogError(ex, "CAPTCHA store unavailable");
+            errors.Add("captcha", CaptchaUnavailableException.UserMessage);
         }
 
         Comment? parent = null;
@@ -81,22 +90,36 @@ public sealed class PostCommentHandler(
             HomePage.CreateOptional(command.HomePage));
 
         var storageKey = file is null ? null : await storage.SaveAsync(file, cancellationToken);
+        Comment comment;
         try
         {
-            var comment = await SaveAsync(author, markup, parent, file, storageKey, command.Client, cancellationToken);
-
-            await cache.InvalidateAsync(CacheRegion.TopLevel, cancellationToken);
-            if (comment.RootId is { } rootId)
-            {
-                await cache.InvalidateAsync(CacheRegion.Thread(rootId), cancellationToken);
-            }
-
-            return new PostCommentResult(CommentDto.From(comment), null);
+            comment = await SaveAsync(author, markup, parent, file, storageKey, command.Client, cancellationToken);
         }
         catch when (storageKey is not null)
         {
             await DeleteOrphanAsync(storageKey);
             throw;
+        }
+
+        await InvalidateCachesAsync(comment);
+        return new PostCommentResult(CommentDto.From(comment), null);
+    }
+
+    /// <summary>Runs after the commit, so it must not throw: a failure only leaves cached pages until they expire.</summary>
+    private async Task InvalidateCachesAsync(Comment comment)
+    {
+        try
+        {
+            var region = comment.RootId is { } rootId ? CacheRegion.Thread(rootId) : CacheRegion.TopLevel;
+            await cache.InvalidateAsync(region, CancellationToken.None);
+            if (comment.RootId is null)
+            {
+                await cache.IncrementCounterAsync(CommentQueries.TopLevelCounter);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Could not invalidate cached pages after comment {Id}", comment.Id);
         }
     }
 

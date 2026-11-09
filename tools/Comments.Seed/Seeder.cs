@@ -24,6 +24,9 @@ internal sealed class Seeder(SeedOptions options)
     private readonly Random _random = new(2026);
     private readonly Faker _english = new("en") { Random = new Randomizer(2026) };
 
+    /// <summary>Ids of the threads that get about a thousand replies each; the load test opens them page by page.</summary>
+    public IReadOnlyList<long> PopularThreadIds { get; private set; } = [];
+
     public async Task<(int Users, int Comments)> RunAsync()
     {
         await using var connection = new SqlConnection(options.SqlConnectionString);
@@ -141,6 +144,7 @@ internal sealed class Seeder(SeedOptions options)
             await BulkCopyAsync(connection, "Comments", table);
         }
 
+        PopularThreadIds = popular;
         Console.WriteLine($"Threads: {roots.Count:N0}, replies: {options.Comments - roots.Count:N0}");
     }
 

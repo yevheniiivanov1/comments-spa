@@ -27,10 +27,10 @@ namespace Comments.Api.Tests;
 /// </summary>
 public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
-    private readonly MsSqlContainer _sql = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2022-latest").Build();
-    private readonly RedisContainer _redis = new RedisBuilder("redis:8-alpine").Build();
+    private readonly MsSqlContainer _sql = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2022-CU27-GDR1-ubuntu-22.04").Build();
+    private readonly RedisContainer _redis = new RedisBuilder("redis:8.6-alpine").Build();
     private readonly RabbitMqContainer _rabbit = new RabbitMqBuilder("rabbitmq:4.1-management").Build();
-    private readonly AzuriteContainer _azurite = new AzuriteBuilder("mcr.microsoft.com/azure-storage/azurite:latest")
+    private readonly AzuriteContainer _azurite = new AzuriteBuilder("mcr.microsoft.com/azure-storage/azurite:3.37.0")
         .WithCommand("--skipApiVersionCheck")
         .Build();
     private readonly IContainer _elastic = new ContainerBuilder("elasticsearch:8.19.4")
@@ -50,11 +50,14 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 
         builder.UseEnvironment("Testing");
         builder.UseSetting("ConnectionStrings:commentsdb", sql.ConnectionString);
-        builder.UseSetting("ConnectionStrings:redis", _redis.GetConnectionString());
+        // Short timeouts so tests that pause Redis see failures in about a second, as a production client would after its own timeout.
+        builder.UseSetting("ConnectionStrings:redis", _redis.GetConnectionString() + ",asyncTimeout=1000,syncTimeout=1000,abortConnect=false");
         builder.UseSetting("ConnectionStrings:rabbitmq", _rabbit.GetConnectionString());
         builder.UseSetting("ConnectionStrings:elasticsearch", $"http://{_elastic.Hostname}:{_elastic.GetMappedPublicPort(9200)}");
         builder.UseSetting("ConnectionStrings:blobs", _azurite.GetConnectionString());
         builder.UseSetting("Captcha:ExposeAnswerForTesting", "true");
+        builder.UseSetting("Search:RequestTimeout", "00:00:02");
+        builder.UseSetting("SearchIndexing:RetryDelay", "00:00:01");
         builder.UseSetting("RateLimits:PostsPerMinute", "100000");
         builder.UseSetting("RateLimits:CaptchasPerMinute", "100000");
         builder.ConfigureTestServices(services => services.AddCommentsBackgroundServices());
@@ -68,10 +71,29 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
                 : Task.CompletedTask))
             .WaitAsync(TimeSpan.FromSeconds(60));
 
+    /// <summary>Pauses the Redis container (requests hang and time out, like a stalled server) until the returned scope ends.</summary>
+    public async Task<IAsyncDisposable> PauseRedisAsync()
+    {
+        await _redis.PauseAsync();
+        return new Resume(() => _redis.UnpauseAsync());
+    }
+
+    /// <summary>Pauses the Elasticsearch container until the returned scope ends.</summary>
+    public async Task<IAsyncDisposable> PauseElasticsearchAsync()
+    {
+        await _elastic.PauseAsync();
+        return new Resume(() => _elastic.UnpauseAsync());
+    }
+
     public async Task<T> WithDbAsync<T>(Func<CommentsDbContext, Task<T>> query)
     {
         await using var scope = Services.CreateAsyncScope();
         return await query(scope.ServiceProvider.GetRequiredService<CommentsDbContext>());
+    }
+
+    private sealed class Resume(Func<Task> resume) : IAsyncDisposable
+    {
+        public async ValueTask DisposeAsync() => await resume();
     }
 
     public override async ValueTask DisposeAsync()

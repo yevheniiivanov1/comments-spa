@@ -11,6 +11,7 @@ public sealed class ValueObjectTests
     [InlineData("John Doe", "User Name may contain only Latin letters and digits.")]
     [InlineData("José", "User Name may contain only Latin letters and digits.")]
     [InlineData("john_doe", "User Name may contain only Latin letters and digits.")]
+    [InlineData("Anonym\n", "User Name may contain only Latin letters and digits.")]
     public void UserName_allows_latin_letters_and_digits(string value, string? error) =>
         Assert.Equal(error, UserName.Validate(value));
 
@@ -20,6 +21,7 @@ public sealed class ValueObjectTests
     [InlineData("user@localhost", false)]
     [InlineData("user@@example.com", false)]
     [InlineData("user example.com", false)]
+    [InlineData("user@example.com\n", false)]
     [InlineData("", false)]
     public void Email_must_be_an_address(string value, bool valid) =>
         Assert.Equal(valid, EmailAddress.Validate(value) is null);

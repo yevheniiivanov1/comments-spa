@@ -1,5 +1,6 @@
 using Comments.Application.Abstractions;
 using Comments.Application.Comments;
+using HotChocolate.CostAnalysis.Types;
 
 namespace Comments.Api.GraphQL;
 
@@ -26,6 +27,15 @@ public sealed class CommentsQuery
         queries.GetThreadAsync(rootId, Math.Max(0, after), cancellationToken);
 
     /// <summary>Full-text search (Elasticsearch); snippets are HTML-escaped with matches in &lt;mark&gt;.</summary>
+    /// <remarks>Costed so that one request can hold only a few searches (aliases cannot multiply them).</remarks>
+    [Cost(GraphQLLimits.SearchCost)]
     public Task<SearchResult> Search(string query, [Service] ICommentSearch search, int page = 1, CancellationToken cancellationToken = default) =>
         search.SearchAsync(query, page, cancellationToken);
+}
+
+/// <summary>Query budget: a request may cost at most <see cref="MaxFieldCost"/>, and each search costs <see cref="SearchCost"/>.</summary>
+public static class GraphQLLimits
+{
+    public const double MaxFieldCost = 1_000;
+    public const double SearchCost = 200;
 }
