@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Xml;
 using Comments.Domain.Users;
 
 namespace Comments.Domain.Markup;
@@ -44,11 +45,37 @@ public static partial class CommentMarkup
     /// <summary>Text content of markup produced by <see cref="Parse"/> (well-formed, so stripping tags is exact).</summary>
     public static string ToPlainText(string html) => WebUtility.HtmlDecode(AnyTag().Replace(html, string.Empty));
 
-    /// <summary>Unifies line breaks and drops control characters that XML 1.0 does not allow.</summary>
-    private static string Normalize(string input)
+    /// <summary>Unifies line breaks and drops characters that XML 1.0 does not allow.</summary>
+    private static string Normalize(string input) =>
+        RemoveInvalidXmlCharacters(input.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n'));
+
+    /// <summary>
+    /// Drops characters XML 1.0 forbids (most C0 controls, U+FFFE/U+FFFF, unpaired surrogates). Applied to the raw input and
+    /// again after entities are decoded, because <c>&amp;#1;</c> decodes to U+0001 and would make the output invalid XHTML.
+    /// </summary>
+    internal static string RemoveInvalidXmlCharacters(string value)
     {
-        var text = input.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n');
-        return InvalidXmlCharacters().Replace(text, string.Empty);
+        StringBuilder? clean = null;
+        for (var i = 0; i < value.Length; i++)
+        {
+            var c = value[i];
+            if (char.IsHighSurrogate(c) && i + 1 < value.Length && char.IsLowSurrogate(value[i + 1]))
+            {
+                clean?.Append(c).Append(value[i + 1]);
+                i++;
+                continue;
+            }
+
+            if (!char.IsSurrogate(c) && XmlConvert.IsXmlChar(c))
+            {
+                clean?.Append(c);
+                continue;
+            }
+
+            clean ??= new StringBuilder(value, 0, i, value.Length);
+        }
+
+        return clean?.ToString() ?? value;
     }
 
     internal static string Encode(string value, bool attribute)
@@ -79,9 +106,6 @@ public static partial class CommentMarkup
 
     [GeneratedRegex("""\s+(?<name>[^\s=<>/"']+)\s*=\s*(?:"(?<value>[^"<]*)"|'(?<value>[^'<]*)')""", RegexOptions.CultureInvariant)]
     private static partial Regex Attribute();
-
-    [GeneratedRegex(@"[\u0000-\u0008\u000B\u000C\u000E-\u001F￾￿]")]
-    private static partial Regex InvalidXmlCharacters();
 
     [GeneratedRegex("<[^>]*>")]
     private static partial Regex AnyTag();
@@ -154,7 +178,7 @@ public static partial class CommentMarkup
                 return;
             }
 
-            var text = WebUtility.HtmlDecode(raw);
+            var text = RemoveInvalidXmlCharacters(WebUtility.HtmlDecode(raw));
             _plain.Append(text);
             _html.Append(Encode(text, attribute: false));
         }
@@ -250,7 +274,7 @@ public static partial class CommentMarkup
             foreach (Match attribute in Attribute().Matches(source))
             {
                 var name = attribute.Groups["name"].Value;
-                var value = WebUtility.HtmlDecode(attribute.Groups["value"].Value).Trim();
+                var value = RemoveInvalidXmlCharacters(WebUtility.HtmlDecode(attribute.Groups["value"].Value)).Trim();
 
                 if (tag != "a" || name is not ("href" or "title"))
                 {

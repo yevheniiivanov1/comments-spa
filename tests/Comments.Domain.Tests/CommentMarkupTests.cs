@@ -100,6 +100,28 @@ public sealed class CommentMarkupTests
         Assert.Equal("abc", result.Html);
     }
 
+    [Theory]
+    [InlineData("a&#1;b", "ab")]
+    [InlineData("a&#x1F;b&#xFFFE;c", "abc")]
+    [InlineData("a&#xD800;b", "a&amp;#xD800;b")]
+    [InlineData("smile &#x1F600;", "smile \U0001F600")]
+    public void Characters_xml_forbids_are_dropped_after_entities_are_decoded(string input, string expected)
+    {
+        var result = CommentMarkup.Parse(input);
+
+        Assert.Equal(expected, result.Html);
+        System.Xml.Linq.XDocument.Parse($"<div>{result.Html}</div>");
+    }
+
+    [Fact]
+    public void Characters_xml_forbids_are_dropped_from_attributes()
+    {
+        var result = CommentMarkup.Parse("""<a href="https://example.com" title="a&#1;b">x</a>""");
+
+        Assert.Contains("""title="ab" """.TrimEnd(), result.Html, StringComparison.Ordinal);
+        System.Xml.Linq.XDocument.Parse($"<div>{result.Html}</div>");
+    }
+
     [Fact]
     public void All_errors_are_reported_at_once()
     {
