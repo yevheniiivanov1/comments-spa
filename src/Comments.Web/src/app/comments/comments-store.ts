@@ -20,6 +20,10 @@ export interface ThreadState {
 export const DEFAULT_QUERY: PageQuery = { page: 1, sort: 'createdAt', direction: 'desc' };
 const FRESH_MS = 2500;
 
+function samePageQuery(a: PageQuery, b: PageQuery): boolean {
+  return a.page === b.page && a.sort === b.sort && a.direction === b.direction;
+}
+
 /**
  * State of the comments board: the current page of top-level comments (from the URL query),
  * the threads the reader opened, and which comments just arrived (for the highlight).
@@ -28,7 +32,8 @@ const FRESH_MS = 2500;
 export class CommentsStore {
   private readonly api = inject(CommentsApi);
 
-  readonly query = signal<PageQuery>(DEFAULT_QUERY);
+  /** Compared by value: the page sets it from the URL on every navigation, and an equal query must not refetch. */
+  readonly query = signal<PageQuery>(DEFAULT_QUERY, { equal: samePageQuery });
   private readonly pageEnabled = signal(false);
   readonly page = rxResource<CommentPage, PageQuery | undefined>({
     params: () => (this.pageEnabled() ? this.query() : undefined),

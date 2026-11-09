@@ -25,9 +25,11 @@ describe('CommentsStore', () => {
   let store: CommentsStore;
   let threadPages: Record<number, ThreadPage>;
   let threadRequests: { rootId: number; after: number }[];
+  let pageRequests: number;
 
   beforeEach(async () => {
     threadRequests = [];
+    pageRequests = 0;
     threadPages = {};
     const page: CommentPage = {
       items: [comment(1, null, null, 3), comment(2)],
@@ -39,7 +41,10 @@ describe('CommentsStore', () => {
       direction: 'desc',
     };
     const api: Partial<CommentsApi> = {
-      getPage: () => of(page),
+      getPage: () => {
+        pageRequests++;
+        return of(page);
+      },
       getThread: (rootId: number, after = 0) => {
         threadRequests.push({ rootId, after });
         return of(threadPages[rootId] ?? { rootId, items: [], nextAfter: null });
@@ -50,6 +55,17 @@ describe('CommentsStore', () => {
     store = TestBed.inject(CommentsStore);
     store.enablePage();
     await TestBed.inject(ApplicationRef).whenStable();
+  });
+
+  it('does not refetch the page when the query is set to an equal value', async () => {
+    const appRef = TestBed.inject(ApplicationRef);
+    store.query.set({ page: 1, sort: 'createdAt', direction: 'desc' });
+    await appRef.whenStable();
+    expect(pageRequests).toBe(1);
+
+    store.query.set({ page: 2, sort: 'createdAt', direction: 'desc' });
+    await appRef.whenStable();
+    expect(pageRequests).toBe(2);
   });
 
   it('counts new threads posted by others instead of moving the list under the reader', () => {
