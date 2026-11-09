@@ -67,7 +67,7 @@
             <td class="col-date" data-label="Date">
               <time [attr.datetime]="c.createdAt">{{ c.createdAt | date: 'dd.MM.yy' }}<br /><span class="muted">{{ c.createdAt | date: 'HH:mm' }}</span></time>
             </td>
-            <td class="col-text" (click)="store.toggleThread(c)" [title]="thread?.open ? 'Collapse' : 'Open the thread'">
+            <td class="col-text" (click)="onTextClick($event, c)" [title]="thread?.open ? 'Collapse' : 'Open the thread'">
               <div class="text comment-html" [class.clamp]="!thread?.open" [innerHTML]="c.html"></div>
               @if (c.attachment; as file) {
                 <button type="button" class="attachment-chip" (click)="$event.stopPropagation(); openAttachment(file, c)">
