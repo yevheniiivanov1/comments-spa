@@ -16,6 +16,7 @@ loadtest/results/*
 
 # Deployment secrets
 deploy/azure/.env
+deploy/gcp/.env
 
 # Editors and OS
 .idea/

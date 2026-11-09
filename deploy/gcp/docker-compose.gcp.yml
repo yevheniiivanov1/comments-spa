@@ -1,0 +1,63 @@
+# Production overlay for one Compute Engine VM:
+#   docker compose -f docker-compose.yml -f deploy/gcp/docker-compose.gcp.yml --env-file deploy/gcp/.env up -d --build
+# Caddy terminates HTTPS (Let's Encrypt) for SITE_ADDRESS and is the only service published on the host.
+# Attachments stay in the Azurite container on the VM's disk (its blob-data volume), behind the API like everything else.
+
+services:
+  caddy:
+    image: caddy:2.10-alpine
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS to the VM's DNS name}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  api:
+    ports: !reset []
+    environment:
+      # Trust X-Forwarded-For only here: Caddy is the only way in and overwrites the header from clients.
+      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+    deploy:
+      resources:
+        limits:
+          memory: 768m
+
+  worker:
+    deploy:
+      resources:
+        limits:
+          memory: 384m
+
+  rabbitmq:
+    ports: !reset []
+
+  sqlserver:
+    deploy:
+      resources:
+        limits:
+          memory: 2560m
+
+  elasticsearch:
+    deploy:
+      resources:
+        limits:
+          memory: 1280m
+
+  azurite:
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+volumes:
+  caddy-data:
+  caddy-config:
