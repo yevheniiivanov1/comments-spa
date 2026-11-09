@@ -29,6 +29,9 @@ services:
     environment:
       ConnectionStrings__commentsdb: Server=sqlserver;Database=comments;User Id=sa;Password=${SQL_PASSWORD:-Comments_Dev_2026!};TrustServerCertificate=true
       ConnectionStrings__redis: redis:6379
+      POPULAR_THREADS_FILE: /results/popular-threads.json
+    volumes:
+      - ./loadtest/results:/results
     depends_on:
       sqlserver:
         condition: service_healthy

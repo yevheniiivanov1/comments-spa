@@ -2,7 +2,8 @@ using System.Globalization;
 
 namespace Comments.Seed;
 
-internal sealed record SeedOptions(int Comments, int Users, double TopLevelShare, string SqlConnectionString, string? RedisConnectionString)
+internal sealed record SeedOptions(
+    int Comments, int Users, double TopLevelShare, string SqlConnectionString, string? RedisConnectionString, string? PopularThreadsFile)
 {
     public static SeedOptions Parse(string[] args)
     {
@@ -17,6 +18,7 @@ internal sealed record SeedOptions(int Comments, int Users, double TopLevelShare
             int.Parse(Arg("--users") ?? "100000", CultureInfo.InvariantCulture),
             double.Parse(Arg("--top-level-share") ?? "0.3", CultureInfo.InvariantCulture),
             sql,
-            Arg("--redis") ?? Environment.GetEnvironmentVariable("ConnectionStrings__redis"));
+            Arg("--redis") ?? Environment.GetEnvironmentVariable("ConnectionStrings__redis"),
+            Arg("--popular-out") ?? Environment.GetEnvironmentVariable("POPULAR_THREADS_FILE"));
     }
 }

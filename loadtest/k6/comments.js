@@ -1,6 +1,7 @@
 // Load test for the comments service: the traffic mix of 100k users a day at their busiest, plus headroom.
-// Profiles (PROFILE env): smoke (sanity), peak (the busiest hour with spikes, the target), stress (3x peak).
-// See docs/architecture.md for how the rates were derived.
+// Profiles (PROFILE env): smoke (sanity), peak (the busiest hour with spikes, the target), stress (3x peak),
+// write (1M new comments a day at peak: ~60 posts a second). See docs/architecture.md for how the rates were derived.
+// k6 calls the API directly (no Caddy, no TLS) with the load-test overlay, which lifts rate limits and exposes CAPTCHA answers.
 
 import http from 'k6/http';
 import { check } from 'k6';
@@ -14,6 +15,7 @@ const PROFILES = {
   smoke: { browse: 5, threads: 3, search: 1, post: 1, sockets: 10, hold: '30s' },
   peak: { browse: 120, threads: 50, search: 10, post: 4, sockets: 500, hold: '3m' },
   stress: { browse: 360, threads: 150, search: 30, post: 12, sockets: 1500, hold: '3m' },
+  write: { browse: 60, threads: 30, search: 5, post: 60, sockets: 300, hold: '3m' },
 };
 const profile = PROFILES[__ENV.PROFILE || 'peak'];
 const RAMP = '30s';
@@ -24,6 +26,8 @@ const liveEvents = new Counter('live_events');
 const posted = new Counter('comments_posted');
 
 const SORTS = ['createdAt', 'userName', 'email'];
+const PHOTO = open('./photo.jpg', 'b');
+const POPULAR = loadPopularThreads();
 const WORDS = [
   'lorem', 'ipsum', 'dolor', 'amet', 'consectetur', 'voluptas', 'quia', 'neque', 'porro', 'aut',
   'research', 'competitors', 'political', 'culture', 'opportunities', 'semantic', 'analysis',
@@ -63,18 +67,34 @@ export const options = {
   summaryTrendStats: ['avg', 'med', 'p(90)', 'p(95)', 'p(99)', 'max'],
 };
 
-/** Collects thread ids worth opening and the size of the list, once, before the load starts. */
+/** The seed tool writes the ids of its long threads (about a thousand replies each) next to the results. */
+function loadPopularThreads() {
+  try {
+    return JSON.parse(open('/results/popular-threads.json'));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Collects thread ids once, before the load starts: recent ones from the first pages (likely cached) and a sample from
+ * random deep pages (cold), so thread reads are not only cheap cache hits.
+ */
 export function setup() {
   const first = http.get(`${BASE}/api/comments`).json();
-  const roots = [];
+  const recent = [];
   for (let page = 1; page <= 8; page++) {
-    const body = http.get(`${BASE}/api/comments?page=${page}&sort=createdAt&direction=desc`).json();
-    for (const c of body.items) {
-      roots.push(c.id);
+    for (const c of http.get(`${BASE}/api/comments?page=${page}`).json().items) {
+      recent.push(c.id);
     }
   }
-  const newest = first.items.length ? first.items[0].id : 1;
-  return { roots, totalPages: first.totalPages, maxId: newest };
+  const sampled = [];
+  for (let i = 0; i < 20; i++) {
+    for (const c of http.get(`${BASE}/api/comments?page=${randomInt(9, first.totalPages)}`).json().items) {
+      sampled.push(c.id);
+    }
+  }
+  return { recent, sampled, popular: POPULAR, totalPages: first.totalPages };
 }
 
 export function browse(data) {
@@ -89,10 +109,23 @@ export function browse(data) {
   check(response, { 'page 200': (r) => r.status === 200 });
 }
 
+/** 50% recent threads, 25% random older ones, 25% long threads read page by page (up to 3 pages of 200). */
 export function threads(data) {
-  const id = Math.random() < 0.7 && data.roots.length ? pick(data.roots) : randomInt(1, data.maxId);
-  const response = http.get(`${BASE}/api/comments/${id}/thread`, { tags: { name: 'GET /api/comments/{id}/thread' } });
-  check(response, { 'thread 200': (r) => r.status === 200 });
+  const roll = Math.random();
+  const pool = roll < 0.5 || (!data.sampled.length && !data.popular.length) ? data.recent : roll < 0.75 || !data.popular.length ? data.sampled : data.popular;
+  const id = pick(pool.length ? pool : data.recent);
+  let after = 0;
+  for (let page = 0; page < 3; page++) {
+    const response = http.get(`${BASE}/api/comments/${id}/thread?after=${after}`, { tags: { name: 'GET /api/comments/{id}/thread' } });
+    if (!check(response, { 'thread 200': (r) => r.status === 200 })) {
+      return;
+    }
+    const next = response.json().nextAfter;
+    if (next === null || pool !== data.popular) {
+      return;
+    }
+    after = next;
+  }
 }
 
 export function search() {
@@ -109,12 +142,16 @@ export function post(data) {
     captchaId: captcha.id,
     captchaAnswer: captcha.answer,
   };
-  if (Math.random() < 0.3 && data.roots.length) {
-    fields.parentId = String(pick(data.roots));
+  if (Math.random() < 0.3 && data.recent.length) {
+    fields.parentId = String(pick(Math.random() < 0.2 && data.popular.length ? data.popular : data.recent));
   }
   const tags = { tags: { name: 'POST /api/comments' } };
+  const attachment = Math.random();
   let response;
-  if (Math.random() < 0.1) {
+  if (attachment < 0.1) {
+    fields.file = http.file(PHOTO, 'photo.jpg', 'image/jpeg');
+    response = http.post(`${BASE}/api/comments`, fields, tags);
+  } else if (attachment < 0.2) {
     fields.file = http.file(`notes from VU ${__VU}\n`.repeat(50), 'notes.txt', 'text/plain');
     response = http.post(`${BASE}/api/comments`, fields, tags);
   } else {
