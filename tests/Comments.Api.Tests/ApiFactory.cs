@@ -56,6 +56,8 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         builder.UseSetting("ConnectionStrings:elasticsearch", $"http://{_elastic.Hostname}:{_elastic.GetMappedPublicPort(9200)}");
         builder.UseSetting("ConnectionStrings:blobs", _azurite.GetConnectionString());
         builder.UseSetting("Captcha:ExposeAnswerForTesting", "true");
+        builder.UseSetting("Search:RequestTimeout", "00:00:02");
+        builder.UseSetting("SearchIndexing:RetryDelay", "00:00:01");
         builder.UseSetting("RateLimits:PostsPerMinute", "100000");
         builder.UseSetting("RateLimits:CaptchasPerMinute", "100000");
         builder.ConfigureTestServices(services => services.AddCommentsBackgroundServices());
@@ -74,6 +76,13 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     {
         await _redis.PauseAsync();
         return new Resume(() => _redis.UnpauseAsync());
+    }
+
+    /// <summary>Pauses the Elasticsearch container until the returned scope ends.</summary>
+    public async Task<IAsyncDisposable> PauseElasticsearchAsync()
+    {
+        await _elastic.PauseAsync();
+        return new Resume(() => _elastic.UnpauseAsync());
     }
 
     public async Task<T> WithDbAsync<T>(Func<CommentsDbContext, Task<T>> query)

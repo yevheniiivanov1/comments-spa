@@ -6,6 +6,7 @@ using Comments.Infrastructure.Files;
 using Comments.Infrastructure.Messaging;
 using Comments.Infrastructure.Persistence;
 using Comments.Infrastructure.Search;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -59,6 +60,7 @@ public static class DependencyInjection
     public static IServiceCollection AddCommentsBackgroundServices(this IServiceCollection services)
     {
         services.AddSingleton(TimeProvider.System);
+        services.AddOptions<SearchIndexingOptions>().BindConfiguration(SearchIndexingOptions.Section);
         services.AddHostedService<OutboxDispatcher>();
         services.AddHostedService<SearchIndexerConsumer>();
         services.AddScoped<SearchReindexer>();
@@ -80,7 +82,9 @@ public static class DependencyInjection
 
     public static IHostApplicationBuilder AddCommentsSearch(this IHostApplicationBuilder builder)
     {
-        builder.AddElasticsearchClient(Elasticsearch);
+        // A hung node should fail a request in seconds (the indexer then schedules a retry), not after the client's default minute.
+        var timeout = builder.Configuration.GetValue("Search:RequestTimeout", TimeSpan.FromSeconds(10));
+        builder.AddElasticsearchClient(Elasticsearch, configureClientSettings: settings => settings.RequestTimeout(timeout));
         builder.Services.AddSingleton<ElasticCommentSearch>();
         builder.Services.AddSingleton<ICommentSearch>(sp => sp.GetRequiredService<ElasticCommentSearch>());
         builder.Services.AddSingleton<ICommentIndexer>(sp => sp.GetRequiredService<ElasticCommentSearch>());
