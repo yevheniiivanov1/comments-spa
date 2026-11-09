@@ -254,7 +254,7 @@ v1.1.0   hardening: fix/cache-and-post-resilience, fix/search-indexing-retries, 
          fix/input-validation, fix/api-hardening, fix/client-ux, perf/list-cache-and-images, test/load-realism, docs/review-follow-up
          (each → develop; develop → main per release)
 v1.2.0   feature/gcp-deploy
-v1.2.1   fix/duplicate-page-request
+v1.2.1–1.2.2   fix/duplicate-page-request
 ```
 
 ## Deploying
