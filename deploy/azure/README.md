@@ -8,7 +8,7 @@ Internet ──443──► Caddy ──► API ──► SQL Server, Redis, Rab
                   Worker ──► SQL Server, RabbitMQ, Elasticsearch
 ```
 
-Why not PaaS: SQL Server, Elasticsearch, RabbitMQ and Redis as managed Azure services cost an order of magnitude more than one VM, and for a test stand it matters more that the cloud setup matches what is checked locally. The path to production is in [docs/architecture.md](../../docs/architecture.md): Azure SQL, Azure Cache for Redis, Azure SignalR Service, Elastic Cloud, Container Apps.
+Why not PaaS: SQL Server, Elasticsearch, RabbitMQ and Redis as managed Azure services cost an order of magnitude more than one VM, and for a demo it matters more that the cloud setup matches what runs locally. The path to production is in [docs/architecture.md](../../docs/architecture.md): Azure SQL, Azure Cache for Redis, Azure SignalR Service, Elastic Cloud, Container Apps.
 
 ## Prerequisites
 
@@ -60,4 +60,4 @@ az group delete --name comments-rg --yes
 
 ## Cost
 
-`Standard_B2as_v2` with a 64 GB disk and a public IP is about $60–70 a month; the storage account costs cents. A new account's credit covers the whole review period.
+`Standard_B2as_v2` with a 64 GB disk and a public IP is about $60–70 a month; the storage account costs cents. A new account's credit covers about three months.
