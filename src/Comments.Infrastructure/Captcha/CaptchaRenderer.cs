@@ -34,7 +34,7 @@ internal sealed class CaptchaRenderer : IDisposable
             ink.Color = RandomColor(random, 20, 110);
             canvas.Save();
             canvas.Translate(x, 42 + random.Next(-5, 6));
-            canvas.RotateDegrees(random.Next(-28, 29));
+            canvas.RotateDegrees(random.Next(-18, 19));
             canvas.DrawText(letter.ToString(), 0, 0, SKTextAlign.Left, font, ink);
             canvas.Restore();
             x += font.MeasureText(letter.ToString()) + random.Next(2, 7);
