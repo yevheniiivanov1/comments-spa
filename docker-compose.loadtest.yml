@@ -8,6 +8,10 @@
 # Results are written to loadtest/results/.
 
 services:
+  sqlserver:
+    environment:
+      MSSQL_PID: Developer
+
   api:
     environment:
       Captcha__ExposeAnswerForTesting: "true"

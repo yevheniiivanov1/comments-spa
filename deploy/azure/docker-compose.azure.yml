@@ -24,6 +24,8 @@ services:
   api:
     ports: !reset []
     environment:
+      # Trust X-Forwarded-For only here: Caddy is the only way in and overwrites the header from clients.
+      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
       ConnectionStrings__blobs: ${BLOB_CONNECTION_STRING:?set BLOB_CONNECTION_STRING to the storage account connection string}
     depends_on: !override
       sqlserver:
