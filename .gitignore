@@ -1,0 +1,24 @@
+# .NET
+bin/
+obj/
+TestResults/
+*.user
+.vs/
+
+# Node / Angular
+node_modules/
+dist/
+.angular/
+
+# Load test output
+loadtest/results/*
+!loadtest/results/.gitkeep
+
+# Deployment secrets
+deploy/azure/.env
+
+# Editors and OS
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
