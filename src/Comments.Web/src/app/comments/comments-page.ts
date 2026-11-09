@@ -2,6 +2,7 @@ import { DatePipe, DecimalPipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, effect, inject } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
+import { LiveUpdates } from '../core/live-updates';
 import { AttachmentDto, CommentDto, CommentSort, SortDirection } from '../core/models';
 import { Avatar } from '../shared/avatar';
 import { Icon } from '../shared/icons';
@@ -48,6 +49,7 @@ export class CommentsPage {
   constructor() {
     effect(() => this.store.query.set(this.parseQuery()));
     this.composer.posted.pipe(takeUntilDestroyed()).subscribe((comment) => this.onPosted(comment));
+    inject(LiveUpdates).commentPosted.pipe(takeUntilDestroyed()).subscribe((comment) => this.store.addLive(comment));
   }
 
   protected sortBy(sort: CommentSort): void {

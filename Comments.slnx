@@ -6,6 +6,7 @@
     <Project Path="src/Comments.Domain/Comments.Domain.csproj" />
     <Project Path="src/Comments.Infrastructure/Comments.Infrastructure.csproj" />
     <Project Path="src/Comments.ServiceDefaults/Comments.ServiceDefaults.csproj" />
+    <Project Path="src/Comments.Worker/Comments.Worker.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Comments.Api.Tests/Comments.Api.Tests.csproj" />

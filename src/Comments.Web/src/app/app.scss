@@ -28,6 +28,48 @@
   }
 }
 
+.live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #f0a500;
+  }
+
+  &[data-state='live'] {
+    color: #1b8a4b;
+
+    .dot {
+      background: #22b35e;
+      animation: pulse 2s ease-out infinite;
+    }
+  }
+
+  &[data-state='offline'] .dot {
+    background: var(--danger);
+  }
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgb(34 179 94 / 0.6);
+  }
+  100% {
+    box-shadow: 0 0 0 8px rgb(34 179 94 / 0);
+  }
+}
+
 main {
   padding-top: 24px;
   padding-bottom: 32px;
