@@ -6,10 +6,19 @@ using Comments.Infrastructure.Json;
 
 namespace Comments.Infrastructure.Persistence.Outbox;
 
-/// <summary>An integration event waiting to be published to RabbitMQ (transactional outbox).</summary>
+/// <summary>
+/// An integration event waiting to be published to RabbitMQ (transactional outbox).
+/// <para>
+/// A message the broker rejects is retried with exponential backoff (2 s, 4 s, … up to 5 minutes) so it does not hold up
+/// the messages behind it, and after <see cref="MaxAttempts"/> it is parked: kept for inspection, skipped by the
+/// dispatcher, and released by the worker's <c>replay</c> command.
+/// </para>
+/// </summary>
 public sealed class OutboxMessage
 {
     public const int MaxErrorLength = 2000;
+    public const int MaxAttempts = 20;
+    private static readonly TimeSpan MaxBackoff = TimeSpan.FromMinutes(5);
 
     private OutboxMessage()
     {
@@ -30,6 +39,12 @@ public sealed class OutboxMessage
 
     public string? LastError { get; private set; }
 
+    /// <summary>Not before this time; set after a failed attempt.</summary>
+    public DateTimeOffset? NextAttemptAt { get; private set; }
+
+    /// <summary>Set when the message ran out of attempts.</summary>
+    public DateTimeOffset? ParkedAt { get; private set; }
+
     public static OutboxMessage From(IDomainEvent domainEvent) => domainEvent switch
     {
         CommentPosted posted => new OutboxMessage
@@ -48,9 +63,19 @@ public sealed class OutboxMessage
         LastError = null;
     }
 
-    public void MarkFailed(string error)
+    public void MarkFailed(string error, DateTimeOffset now)
     {
         Attempts++;
         LastError = error.Length > MaxErrorLength ? error[..MaxErrorLength] : error;
+
+        if (Attempts >= MaxAttempts)
+        {
+            ParkedAt = now;
+            NextAttemptAt = null;
+            return;
+        }
+
+        var backoff = TimeSpan.FromSeconds(Math.Pow(2, Attempts));
+        NextAttemptAt = now + (backoff < MaxBackoff ? backoff : MaxBackoff);
     }
 }
